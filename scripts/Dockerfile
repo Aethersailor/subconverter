@@ -1,52 +1,114 @@
-FROM alpine:3.16 AS builder
-LABEL maintainer="metacubex.official@gmail.com"
+FROM alpine:3.19 AS builder
+LABEL maintainer="official@asailor.org"
 ARG THREADS="4"
 ARG SHA=""
 
-# build minimized
 WORKDIR /
-RUN set -xe && \
-    apk add --no-cache --virtual .build-tools git g++ build-base linux-headers cmake python3 && \
-    apk add --no-cache --virtual .build-deps curl-dev rapidjson-dev pcre2-dev yaml-cpp-dev && \
-    git clone https://github.com/ftk/quickjspp --depth=1 && \
-    cd quickjspp && \
-    git submodule update --init && \
-    cmake -DCMAKE_BUILD_TYPE=Release . && \
-    make quickjs -j $THREADS && \
-    install -d /usr/lib/quickjs/ && \
-    install -m644 quickjs/libquickjs.a /usr/lib/quickjs/ && \
-    install -d /usr/include/quickjs/ && \
-    install -m644 quickjs/quickjs.h quickjs/quickjs-libc.h /usr/include/quickjs/ && \
-    install -m644 quickjspp.hpp /usr/include && \
-    cd .. && \
-    git clone https://github.com/PerMalmberg/libcron --depth=1 && \
-    cd libcron && \
-    git submodule update --init && \
-    cmake -DCMAKE_BUILD_TYPE=Release . && \
-    make libcron -j $THREADS && \
-    install -m644 libcron/out/Release/liblibcron.a /usr/lib/ && \
-    install -d /usr/include/libcron/ && \
-    install -m644 libcron/include/libcron/* /usr/include/libcron/ && \
-    install -d /usr/include/date/ && \
-    install -m644 libcron/externals/date/include/date/* /usr/include/date/ && \
-    cd .. && \
-    git clone https://github.com/ToruNiina/toml11 --branch="v4.3.0" --depth=1 && \
-    cd toml11 && \
-    cmake -DCMAKE_CXX_STANDARD=11 . && \
-    make install -j $THREADS && \
-    cd .. && \
-    git clone https://github.com/metacubex/subconverter --depth=1 && \
-    cd subconverter && \
-    [ -n "$SHA" ] && sed -i 's/\(v[0-9]\.[0-9]\.[0-9]\)/\1-'"$SHA"'/' src/version.h;\
-    python3 -m ensurepip && \
-    python3 -m pip install gitpython && \
-    python3 scripts/update_rules.py -c scripts/rules_config.conf && \
-    cmake -DCMAKE_BUILD_TYPE=Release . && \
-    make -j $THREADS
+
+RUN apk add --no-cache --virtual .build-tools git g++ build-base linux-headers cmake python3 bash py3-pip
+RUN apk add --no-cache --virtual .build-deps curl-dev rapidjson-dev pcre2-dev yaml-cpp-dev
+
+RUN git clone https://github.com/ftk/quickjspp --depth=1
+WORKDIR /quickjspp
+RUN git submodule update --init
+RUN cmake -DCMAKE_BUILD_TYPE=Release .
+RUN make quickjs -j $THREADS
+RUN install -d /usr/lib/quickjs/
+RUN install -m644 quickjs/libquickjs.a /usr/lib/quickjs/
+RUN install -d /usr/include/quickjs/
+RUN install -m644 quickjs/quickjs.h quickjs/quickjs-libc.h /usr/include/quickjs/
+RUN install -m644 quickjspp.hpp /usr/include
+
+WORKDIR /
+RUN git clone https://github.com/PerMalmberg/libcron --depth=1
+WORKDIR /libcron
+RUN git submodule update --init
+RUN cmake -DCMAKE_BUILD_TYPE=Release .
+RUN make libcron -j $THREADS
+RUN install -m644 libcron/out/Release/liblibcron.a /usr/lib/
+RUN install -d /usr/include/libcron/
+RUN install -m644 libcron/include/libcron/* /usr/include/libcron/
+RUN install -d /usr/include/date/
+RUN install -m644 libcron/externals/date/include/date/* /usr/include/date/
+
+WORKDIR /
+RUN git clone https://github.com/ToruNiina/toml11 --branch="v4.3.0" --depth=1
+WORKDIR /toml11
+RUN cmake -DCMAKE_CXX_STANDARD=11 .
+RUN make install -j $THREADS
+
+WORKDIR /
+RUN git clone https://github.com/Aethersailor/subconverter --depth=100 --tags
+WORKDIR /subconverter
+# 生成版本号，优先使用传入的 SHA 参数
+RUN echo "Current git status:"; \
+    git status --porcelain; \
+    echo "Available tags:"; \
+    git tag --list; \
+    echo "Trying to get latest tag..."; \
+    # 尝试多种方式获取最新tag \
+    echo "Trying git describe --tags --abbrev=0..."; \
+    LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null); \
+    echo "git describe result: $LATEST_TAG"; \
+    if [ -z "$LATEST_TAG" ]; then \
+        echo "git describe failed, trying git tag --sort=-version:refname..."; \
+        LATEST_TAG=$(git tag --sort=-version:refname | head -1 2>/dev/null); \
+        echo "git tag --sort result: $LATEST_TAG"; \
+    fi; \
+    if [ -z "$LATEST_TAG" ]; then \
+        echo "git tag --sort failed, trying git tag --list | tail -1..."; \
+        LATEST_TAG=$(git tag --list | tail -1 2>/dev/null); \
+        echo "git tag --list tail result: $LATEST_TAG"; \
+    fi; \
+    if [ -z "$LATEST_TAG" ]; then \
+        echo "All methods failed, trying git tag --list | head -1..."; \
+        LATEST_TAG=$(git tag --list | head -1 2>/dev/null); \
+        echo "git tag --list head result: $LATEST_TAG"; \
+    fi; \
+    if [ -z "$LATEST_TAG" ]; then \
+        echo "All methods failed, using fallback..."; \
+        LATEST_TAG="v0.0.0"; \
+    fi; \
+    echo "Found latest tag: $LATEST_TAG"; \
+    echo "All available tags:"; \
+    git tag --list; \
+    # 获取 GitHub 仓库拥有者名字 \
+    echo "Getting repository owner..."; \
+    REPO_OWNER=$(git remote get-url origin | grep -o 'github\.com[:/][^/]*' | cut -d'/' -f2 | cut -d':' -f2 2>/dev/null); \
+    if [ -z "$REPO_OWNER" ]; then \
+        echo "Failed to get repo owner from git remote, trying fallback..."; \
+        REPO_OWNER="unknown"; \
+    fi; \
+    echo "Repository owner: $REPO_OWNER"; \
+    # 获取当前 commit hash \
+    COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
+    echo "Current commit hash: $COMMIT_HASH"; \
+    # 如果传入了 SHA 参数，则使用它，否则使用当前 commit hash \
+    if [ -n "$SHA" ]; then \
+        echo "Using provided SHA: $SHA"; \
+        VERSION="${LATEST_TAG}-${REPO_OWNER}-${SHA}"; \
+    else \
+        echo "Using current commit hash: $COMMIT_HASH"; \
+        VERSION="${LATEST_TAG}-${REPO_OWNER}-${COMMIT_HASH}"; \
+    fi; \
+    echo "#ifndef VERSION_H_INCLUDED" > src/version.h; \
+    echo "#define VERSION_H_INCLUDED" >> src/version.h; \
+    echo "" >> src/version.h; \
+    echo "#define VERSION \"${VERSION}\"" >> src/version.h; \
+    echo "" >> src/version.h; \
+    echo "#endif // VERSION_H_INCLUDED" >> src/version.h; \
+    echo "Generated version: ${VERSION}"; \
+    echo "Version file content:"; \
+    cat src/version.h;
+RUN python3 -m pip install --upgrade pip --break-system-packages
+RUN python3 -m pip install gitpython --break-system-packages
+RUN python3 scripts/update_rules.py -c scripts/rules_config.conf
+RUN cmake -DCMAKE_BUILD_TYPE=Release .
+RUN make -j $THREADS
 
 # build final image
-FROM alpine:3.16
-LABEL maintainer="metacubex.official@gmail.com"
+FROM alpine:3.19
+LABEL maintainer="official@asailor.org"
 
 RUN apk add --no-cache --virtual subconverter-deps pcre2 libcurl yaml-cpp
 

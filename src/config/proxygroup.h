@@ -20,6 +20,12 @@ enum class BalanceStrategy
     RoundRobin
 };
 
+enum class SmartStrategy
+{
+    StickySessions,
+    RoundRobin
+};
+
 struct ProxyGroupConfig
 {
     String Name;
@@ -31,10 +37,15 @@ struct ProxyGroupConfig
     Integer Timeout = 0;
     Integer Tolerance = 0;
     BalanceStrategy Strategy = BalanceStrategy::ConsistentHashing;
+    SmartStrategy SmartStrategyType = SmartStrategy::StickySessions;
+    String PolicyPriority;
+    Boolean PolicyPrioritySet = false;
     Boolean Lazy;
     Boolean DisableUdp;
     Boolean Persistent;
     Boolean EvaluateBeforeUse;
+    Boolean UseLightGBM = true;
+    Boolean CollectData = false;
 
     String TypeStr() const
     {
@@ -57,6 +68,16 @@ struct ProxyGroupConfig
         {
             case BalanceStrategy::ConsistentHashing: return "consistent-hashing";
             case BalanceStrategy::RoundRobin: return "round-robin";
+        }
+        return "";
+    }
+
+    String SmartStrategyStr() const
+    {
+        switch(SmartStrategyType)
+        {
+            case SmartStrategy::StickySessions: return "sticky-sessions";
+            case SmartStrategy::RoundRobin: return "round-robin";
         }
         return "";
     }

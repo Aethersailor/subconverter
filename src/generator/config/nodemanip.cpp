@@ -39,8 +39,11 @@ int addNodes(std::string link, std::vector<Proxy> &allNodes, int groupID, parse_
     string_array &include_remarks = *parse_set.include_remarks;
     RegexMatchConfigs &stream_rules = *parse_set.stream_rules;
     RegexMatchConfigs &time_rules = *parse_set.time_rules;
-    string_icase_map *request_headers = parse_set.request_header;
+    // 注释掉未使用的变量以避免编译警告
+    // string_icase_map *request_headers = parse_set.request_header;
     bool &authorized = parse_set.authorized;
+    // 彻底禁止传递任何用户头部给机场，确保机场无法识别请求来源
+    // custom_headers留空，不传递任何用户头部信息
     string_icase_map custom_headers;
 
     ConfType linkType = ConfType::Unknow;
@@ -145,12 +148,15 @@ int addNodes(std::string link, std::vector<Proxy> &allNodes, int groupID, parse_
             link = urlDecode(getUrlArg(link, "url"));
         
         // 处理自定义用户代理
-        if(request_headers)
-            custom_headers = *request_headers;
+        // 彻底禁止传递任何用户头部给机场，确保机场无法识别请求来源
+        // custom_headers在函数开头已声明并保持为空
         
+        // 完全禁止传递用户UA给机场，确保机场无法识别客户端类型
+        // 所有订阅请求都使用默认浏览器UA，保证获得完整配置
+        // 不检查用户UA内容，直接拒绝传递
         if(parse_set.custom_user_agent && !parse_set.custom_user_agent->empty())
         {
-            custom_headers["User-Agent"] = *parse_set.custom_user_agent;
+            writeLog(LOG_TYPE_INFO, "User UA blocked from subscription request to ensure full configuration from server.");
         }
         
         strSub = webGet(link, proxy, global.cacheSubscription, &extra_headers, &custom_headers);

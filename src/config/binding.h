@@ -68,14 +68,32 @@ namespace toml
                 conf.Type = ProxyGroupType::Smart;
                 conf.Url = find<String>(v, "url");
                 conf.Interval = find<Integer>(v, "interval");
-                conf.Tolerance = find_or<Integer>(v, "tolerance", 0);
+                if(v.contains("uselightgbm"))
+                    conf.UseLightGBM = find_or<bool>(v, "uselightgbm", true);
+                if(v.contains("collectdata"))
+                    conf.CollectData = find_or<bool>(v, "collectdata", false);
+                if(v.contains("strategy"))
+                {
+                    String strategy = find<String>(v, "strategy");
+                    if(strategy == "round-robin")
+                        conf.SmartStrategyType = SmartStrategy::RoundRobin;
+                    else
+                        conf.SmartStrategyType = SmartStrategy::StickySessions;
+                }
                 if(v.contains("lazy"))
                     conf.Lazy = find_or<bool>(v, "lazy", false);
                 if(v.contains("evaluate-before-use"))
                     conf.EvaluateBeforeUse = find_or(v, "evaluate-before-use", conf.EvaluateBeforeUse.get());
+                if(v.contains("policy-priority")) {
+                    String value = find<String>(v, "policy-priority");
+                    if (!value.empty()) {
+                        conf.PolicyPriority = value;
+                        conf.PolicyPrioritySet = true;
+                    }
+                }
                 break;
             default:
-                throw serialization_error(format_error("Proxy Group has unsupported type!", v.at("type").location(), "should be one of following: select, url-test, load-balance, fallback, relay, ssid"), v.at("type").location());
+                throw serialization_error(format_error("Proxy Group has unsupported type!", v.at("type").location(), "should be one of following: select, url-test, load-balance, fallback, relay, ssid, smart"), v.at("type").location());
             }
             conf.Timeout = find_or(v, "timeout", 5);
             conf.Proxies = find_or<StrArray>(v, "rule", {});
@@ -244,6 +262,130 @@ namespace INIBinding
                     rules_upper_bound -= 2;
                     conf.Url = vArray[rules_upper_bound];
                     parseGroupTimes(vArray[rules_upper_bound + 1], &conf.Interval, &conf.Timeout, &conf.Tolerance);
+                }
+                else if(conf.Type == ProxyGroupType::Smart)
+                {
+                    if(rules_upper_bound < 4)
+                        continue;
+                    // For smart type, URL is at fixed position 3
+                    conf.Url = vArray[3];
+                    
+                    // Check if position 4 is interval or smart parameter
+                    if(vArray.size() > 4 && !vArray[4].empty() && isdigit(vArray[4][0]))
+                    {
+                        // Position 4 is interval
+                        parseGroupTimes(vArray[4], &conf.Interval, &conf.Timeout, &conf.Tolerance);
+                        rules_upper_bound = 3;
+                        
+                        // Parse additional smart parameters starting from position 5
+                        if(vArray.size() > 5)
+                        {
+                            std::string uselightgbm_str = vArray[5];
+                            if(uselightgbm_str.find("uselightgbm=true") != std::string::npos)
+                                conf.UseLightGBM = true;
+                            else if(uselightgbm_str.find("uselightgbm=false") != std::string::npos)
+                                conf.UseLightGBM = false;
+                            else
+                                conf.UseLightGBM = true; // default true
+                        }
+                        
+                        if(vArray.size() > 6)
+                        {
+                            std::string collectdata_str = vArray[6];
+                            if(collectdata_str.find("collectdata=true") != std::string::npos)
+                                conf.CollectData = true;
+                            else if(collectdata_str.find("collectdata=false") != std::string::npos)
+                                conf.CollectData = false;
+                            else
+                                conf.CollectData = false; // default false
+                        }
+                        
+                        if(vArray.size() > 7)
+                        {
+                            std::string strategy_str = vArray[7];
+                            if(strategy_str.find("strategy=round-robin") != std::string::npos)
+                                conf.SmartStrategyType = SmartStrategy::RoundRobin;
+                            else if(strategy_str.find("strategy=sticky-sessions") != std::string::npos)
+                                conf.SmartStrategyType = SmartStrategy::StickySessions;
+                            else
+                                conf.SmartStrategyType = SmartStrategy::StickySessions; // default sticky-sessions
+                        }
+                        
+                        if(vArray.size() > 8)
+                        {
+                            std::string policy_priority_str = vArray[8];
+                            if(policy_priority_str.find("policy-priority=\"") != std::string::npos)
+                            {
+                                size_t start = policy_priority_str.find("\"") + 1;
+                                size_t end = policy_priority_str.rfind("\"");
+                                if(start != std::string::npos && end != std::string::npos && end > start)
+                                {
+                                    std::string value = policy_priority_str.substr(start, end - start);
+                                    if(!value.empty()) {
+                                        conf.PolicyPriority = value;
+                                        conf.PolicyPrioritySet = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // No interval specified, smart parameters start from position 4
+                        rules_upper_bound = 3;
+                        
+                        // Parse additional smart parameters starting from position 4
+                        if(vArray.size() > 4)
+                        {
+                            std::string uselightgbm_str = vArray[4];
+                            if(uselightgbm_str.find("uselightgbm=true") != std::string::npos)
+                                conf.UseLightGBM = true;
+                            else if(uselightgbm_str.find("uselightgbm=false") != std::string::npos)
+                                conf.UseLightGBM = false;
+                            else
+                                conf.UseLightGBM = true; // default true
+                        }
+                        
+                        if(vArray.size() > 5)
+                        {
+                            std::string collectdata_str = vArray[5];
+                            if(collectdata_str.find("collectdata=true") != std::string::npos)
+                                conf.CollectData = true;
+                            else if(collectdata_str.find("collectdata=false") != std::string::npos)
+                                conf.CollectData = false;
+                            else
+                                conf.CollectData = false; // default false
+                        }
+                        
+                        if(vArray.size() > 6)
+                        {
+                            std::string strategy_str = vArray[6];
+                            if(strategy_str.find("strategy=round-robin") != std::string::npos)
+                                conf.SmartStrategyType = SmartStrategy::RoundRobin;
+                            else if(strategy_str.find("strategy=sticky-sessions") != std::string::npos)
+                                conf.SmartStrategyType = SmartStrategy::StickySessions;
+                            else
+                                conf.SmartStrategyType = SmartStrategy::StickySessions; // default sticky-sessions
+                        }
+                        
+                        if(vArray.size() > 7)
+                        {
+                            std::string policy_priority_str = vArray[7];
+                            if(policy_priority_str.find("policy-priority=\"") != std::string::npos)
+                            {
+                                size_t start = policy_priority_str.find("\"") + 1;
+                                size_t end = policy_priority_str.rfind("\"");
+                                if(start != std::string::npos && end != std::string::npos && end > start)
+                                {
+                                    std::string value = policy_priority_str.substr(start, end - start);
+                                    if(!value.empty()) {
+                                        conf.PolicyPriority = value;
+                                        conf.PolicyPrioritySet = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 for(unsigned int i = 2; i < rules_upper_bound; i++)

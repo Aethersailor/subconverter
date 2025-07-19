@@ -121,9 +121,9 @@ struct Proxy
 
     String Ports;
     String Up;
-    uint32_t UpSpeed;
+    uint32_t UpSpeed = 0;
     String Down;
-    uint32_t DownSpeed;
+    uint32_t DownSpeed = 0;
     String AuthStr;
     String SNI;
     String Fingerprint;
@@ -157,6 +157,26 @@ struct Proxy
     uint32_t XTLS;
     String PacketEncoding;
     String ShortID;
+
+    // VLESS specific fields
+    String Network;  // tcp, ws, grpc
+    String ClientFingerprint;  // chrome, firefox, safari, random, none
+    String EchConfig;  // ECH configuration
+    tribool SupportX25519Mlkem768;  // Reality support-x25519mlkem768
+    String GrpcServiceName;  // gRPC service name
+    String WsPath;  // WebSocket path
+    String WsHeaders;  // WebSocket headers
+    tribool V2rayHttpUpgrade;  // v2ray-http-upgrade
+    tribool V2rayHttpUpgradeFastOpen;  // v2ray-http-upgrade-fast-open
+
+    // Hysteria2 ECH specific fields
+    tribool EchEnable;  // ECH enable flag
+    
+    // Hysteria2 quic-go specific fields
+    uint32_t InitialStreamReceiveWindow = 0;
+    uint32_t MaxStreamReceiveWindow = 0;
+    uint32_t InitialConnectionReceiveWindow = 0;
+    uint32_t MaxConnectionReceiveWindow = 0;
 
 };
 

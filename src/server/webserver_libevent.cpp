@@ -192,7 +192,7 @@ static void on_request(evhttp_request *req, void *args)
     auto server = (WebServer*) args;
     static std::string auth_token = "Basic " + base64Encode(server->auth_user + ":" + server->auth_password);
     const char *req_content_type = evhttp_find_header(req->input_headers, "Content-Type"), *req_ac_method = evhttp_find_header(req->input_headers, "Access-Control-Request-Method");
-    const char *uri = req->uri, *internal_flag = evhttp_find_header(req->input_headers, "SubConverter-Request");
+    const char *uri = req->uri, *internal_flag = evhttp_find_header(req->input_headers, "X-Service-ID");
 
     char *client_ip;
     u_short client_port;
@@ -200,7 +200,7 @@ static void on_request(evhttp_request *req, void *args)
     //std::cerr<<"Accept connection from client "<<client_ip<<":"<<client_port<<"\n";
     writeLog(0, "Accept connection from client " + std::string(client_ip) + ":" + std::to_string(client_port), LOG_LEVEL_DEBUG);
 
-    if (internal_flag != nullptr)
+    if (internal_flag != nullptr && std::string(internal_flag) == "config-processor")
     {
         evhttp_send_error(req, 500, "Loop request detected!");
         return;
@@ -247,13 +247,9 @@ static void on_request(evhttp_request *req, void *args)
     }
     request.url = uri;
 
-    struct evkeyval* kv = req->input_headers->tqh_first;
-    while (kv)
-    {
-        if(std::none_of(std::begin(request_header_blacklist), std::end(request_header_blacklist), [&](auto x){ return strcasecmp(kv->key, x) == 0; }))
-            request.headers.emplace(kv->key, kv->value);
-        kv = kv->next.tqe_next;
-    }
+    // 彻底阻止所有用户头部传入：只设置固定的浏览器UA，忽略所有其他头部
+    // 这样确保subconverter对所有访问者都呈现相同的无域名访问浏览器特征
+    request.headers.emplace("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
     request.headers.emplace("X-Client-IP", client_ip);
 
     std::string return_data;
