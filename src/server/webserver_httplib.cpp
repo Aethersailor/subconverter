@@ -39,16 +39,9 @@ static httplib::Server::Handler makeHandler(const responseRoute &rr)
         Response resp;
         req.method = request.method;
         req.url = request.path;
-        for (auto &h: request.headers)
-        {
-            if (startsWith(h.first, "LOCAL_")
-            || startsWith(h.first, "REMOTE_")
-            || is_request_header_blacklisted(h.first))
-            {
-                continue;
-            }
-            req.headers.emplace(h.first.data(), h.second.data());
-        }
+
+        req.headers.emplace("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+        
         req.argument = request.params;
         if (request.method == "POST" || request.method == "PUT" || request.method == "PATCH")
         {
@@ -146,11 +139,15 @@ int WebServer::start_web_server_multi(listener_args *args)
         writeLog(0, "handle_cmd:    " + req.method + " handle_uri:    " + req.target, LOG_LEVEL_VERBOSE);
         writeLog(0, "handle_header: " + dump(req.headers), LOG_LEVEL_VERBOSE);
 
-        if (req.has_header("SubConverter-Request"))
+        if (req.has_header("X-Service-ID"))
         {
-            res.status = 500;
-            res.set_content("Loop request detected!", "text/plain");
-            return httplib::Server::HandlerResponse::Handled;
+            auto value = req.get_header_value("X-Service-ID");
+            if (value == "config-processor")
+            {
+                res.status = 500;
+                res.set_content("Loop request detected!", "text/plain");
+                return httplib::Server::HandlerResponse::Handled;
+            }
         }
         res.set_header("Server", "subconverter/" VERSION " cURL/" LIBCURL_VERSION);
         if (require_auth)

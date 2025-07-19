@@ -1,17 +1,30 @@
-name: Publish Docker Image
+name: Docker Image
+permissions:
+  contents: read
+  packages: write
 on:
   push:
     branches: [ master ]
     tags:
       - '**'
+    paths-ignore:
+      - 'README.md'
+      - 'README-cn.md'
+      - 'README-docker.md'
+      - 'LICENSE'
+      - '**.md'
+      - 'src/version.h'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/clean_failed_cancelled_runs.yml'
+      - '.github/workflows/openwrt.yml'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 env:
-  REGISTRY_IMAGE: metacubex/subconverter
-  GHCR_IMAGE: ghcr.io/metacubex/subconverter
+  REGISTRY_IMAGE: aethersailor/subconverter
+  GHCR_IMAGE: ghcr.io/aethersailor/subconverter
 
 jobs:
   build-dockerhub:
@@ -71,6 +84,7 @@ jobs:
           build-args: |
             SHA=${{ steps.vars.outputs.sha_short }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          no-cache: true
 
       - name: Export digest
         run: |
@@ -127,7 +141,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.CR_PAT }}
 
       - name: Get commit SHA
         if: github.ref == 'refs/heads/master'
@@ -144,6 +158,7 @@ jobs:
           build-args: |
             SHA=${{ steps.vars.outputs.sha_short }}
           outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          no-cache: true
 
       - name: Export digest
         run: |
@@ -224,7 +239,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.CR_PAT }}
 
       - name: Create manifest list and push
         working-directory: /tmp/digests-ghcr

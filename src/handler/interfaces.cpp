@@ -2,6 +2,7 @@
 #include <string>
 #include <mutex>
 #include <numeric>
+#include <algorithm>
 
 #include <yaml-cpp/yaml.h>
 
@@ -65,6 +66,7 @@ const std::vector<UAProfile> UAMatchList = {
     {"ClashX Pro","","","clash",true},
     {"ClashX","\\/([0-9.]+)","0.13","clash",true},
     {"Clash","","","clash",true},
+    {"clash.meta","","","clash",true},
     {"Kitsunebi","","","v2ray"},
     {"Loon","","","loon"},
     {"Pharos","","","mixed"},
@@ -112,6 +114,14 @@ void matchUserAgent(const std::string &user_agent, std::string &target, tribool 
 {
     if(user_agent.empty())
         return;
+    
+    std::string lower_ua = user_agent;
+    std::transform(lower_ua.begin(), lower_ua.end(), lower_ua.begin(), ::tolower);
+    if(strFind(lower_ua, "clash"))
+    {
+        return;
+    }
+    
     for(const UAProfile &x : UAMatchList)
     {
         if(startsWith(user_agent, x.head))
@@ -307,8 +317,8 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     std::string argTarget = getUrlArg(argument, "target"), argSurgeVer = getUrlArg(argument, "ver");
     tribool argClashNewField = getUrlArg(argument, "new_name");
     int intSurgeVer = !argSurgeVer.empty() ? to_int(argSurgeVer, 3) : 3;
-    if(argTarget == "auto")
-        matchUserAgent(request.headers["User-Agent"], argTarget, argClashNewField, intSurgeVer);
+    // if(argTarget == "auto")
+    //     matchUserAgent(request.headers["User-Agent"], argTarget, argClashNewField, intSurgeVer);
 
     /// don't try to load groups or rulesets when generating simple subscriptions
     bool lSimpleSubscription = false;
@@ -610,7 +620,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     parse_set.time_rules = &time_temp;
     parse_set.sub_info = &subInfo;
     parse_set.authorized = authorized;
-    parse_set.request_header = &request.headers;
+    parse_set.request_header = nullptr;
     parse_set.custom_user_agent = &argUserAgent;
     parse_set.js_runtime = ext.js_runtime;
     parse_set.js_context = ext.js_context;
@@ -1089,7 +1099,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
     parse_set.proxy = &proxy;
     parse_set.exclude_remarks = parse_set.include_remarks = &dummy_str_array;
     parse_set.stream_rules = parse_set.time_rules = &dummy_regex_array;
-    parse_set.request_header = &request.headers;
+    parse_set.request_header = nullptr;
     parse_set.sub_info = &subInfo;
     parse_set.authorized = !global.APIMode;
     for(std::string &x : links)

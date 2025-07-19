@@ -4,8 +4,23 @@ on:
     branches: [ master ]
     tags:
       - '**'
+    paths-ignore:
+      - 'README.md'
+      - 'README-cn.md'
+      - 'README-docker.md'
+      - 'LICENSE'
+      - '**.md'
+      - '.github/workflows/docker.yml'
+      - '.github/workflows/clean_failed_cancelled_runs.yml'
+      - '.github/workflows/openwrt.yml'
   workflow_dispatch:
   pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'README-cn.md'
+      - 'README-docker.md'
+      - 'LICENSE'
+      - '**.md'
 
 concurrency: 
   group: ${{ github.ref }}-${{ github.workflow }}
@@ -33,11 +48,24 @@ jobs:
     steps:
     - name: Checkout base
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 50
+
     - name: Add commit id into version
       if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      run: SHA=$(git rev-parse --short HEAD) && sed -i 's/\(v[0-9]\.[0-9]\.[0-9]\)/\1-'"$SHA"'/' src/version.h
+      run: |
+        SHA=$(git rev-parse --short HEAD)
+        sed -i 's/\(v[0-9]\.[0-9]\.[0-9]-asailor\)/\1-'"$SHA"'/' src/version.h
+
     - name: Build
-      run: docker run --rm -v $GITHUB_WORKSPACE:/root/workdir multiarch/alpine:${{ matrix.arch }}-latest-stable /bin/sh -c "apk add bash git nodejs npm && cd /root/workdir && chmod +x scripts/build.alpine.release.sh && bash scripts/build.alpine.release.sh"
+      run: |
+        docker run --rm -v $GITHUB_WORKSPACE:/root/workdir multiarch/alpine:${{ matrix.arch }}-latest-stable /bin/sh -c "
+          apk add bash git nodejs npm
+          cd /root/workdir
+          chmod +x scripts/build.alpine.release.sh
+          bash scripts/build.alpine.release.sh
+        "
+
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
@@ -45,7 +73,7 @@ jobs:
         path: subconverter/
     - name: Package Release
       if: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/') }}
-      run: tar czf ${{ matrix.artifact }}.tar.gz subconverter
+      run: tar czf ${{ matrix.artifact }}.tar.gz subconverter/
     - name: Draft Release
       if: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/') }}
       uses: softprops/action-gh-release@v2
@@ -68,13 +96,18 @@ jobs:
     steps:
     - name: Checkout base
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 50
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-    - name: Add commit id into version
-      if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      run: SHA=$(git rev-parse --short HEAD) && sed -i -e 's/\(v[0-9]\.[0-9]\.[0-9]\)/\1-'"$SHA"'/' src/version.h
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '16'
+    - name: Generate version
+      run: bash scripts/generate_version.sh
     - name: Build
       run: bash scripts/build.macos.release.sh
     - name: Upload
@@ -112,6 +145,8 @@ jobs:
     steps:
     - name: Checkout base
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 50
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
@@ -127,9 +162,8 @@ jobs:
         install: base-devel git mingw-w64-${{ matrix.env }}-gcc mingw-w64-${{ matrix.env }}-cmake mingw-w64-${{ matrix.env }}-pcre2 patch
         msystem: ${{ matrix.msystem }}
         path-type: inherit
-    - name: Add commit id into version
-      if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      run: SHA=$(git rev-parse --short HEAD) && sed -i 's/\(v[0-9]\.[0-9]\.[0-9]\)/\1-'"$SHA"'/' src/version.h
+    - name: Generate version
+      run: bash scripts/generate_version.sh
     - name: Build
       run: bash scripts/build.windows.release.sh
     - name: Upload
