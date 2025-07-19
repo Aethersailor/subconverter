@@ -105,7 +105,16 @@ void trojanConstruct(Proxy &node, const std::string &group, const std::string &r
     node.Host = host;
     node.TLSSecure = tlssecure;
     node.TransferProtocol = network.empty() ? "tcp" : network;
+    node.Network = network.empty() ? "tcp" : network;
     node.Path = path;
+    
+    // 设置专用字段
+    if (network == "grpc") {
+        node.GrpcServiceName = path;
+    } else if (network == "ws") {
+        node.WsPath = path;
+        node.WsHeaders = host;
+    }
 }
 
 void snellConstruct(Proxy &node, const std::string &group, const std::string &remarks, const std::string &server, const std::string &port, const std::string &password, const std::string &obfs, const std::string &host, uint16_t version, tribool udp, tribool tfo, tribool scv, const std::string& underlying_proxy)
@@ -226,14 +235,52 @@ void hysteria2Construct(
     const std::string &ca,
     const std::string &ca_str,
     const std::string &cwnd,
-    const std::string &hop_interval, 
+    const std::string &hop_interval,
+    const std::string &ech_enable,
+    const std::string &ech_config,
+    const std::string &initial_stream_receive_window,
+    const std::string &max_stream_receive_window,
+    const std::string &initial_connection_receive_window,
+    const std::string &max_connection_receive_window,
     tribool tfo, 
     tribool scv, 
     const std::string &underlying_proxy
 ) {
     commonConstruct(node, ProxyType::Hysteria2, group, remarks, server, port, tribool(), tfo, scv, tribool(), underlying_proxy);
-    node.UpSpeed = to_int(up);
-    node.DownSpeed = to_int(down);
+    
+    // 速度参数处理 - 支持带单位和不带单位的格式
+    if (!up.empty()) {
+        if (up.find("bps") != std::string::npos || up.find("Mbps") != std::string::npos || 
+            up.find("Kbps") != std::string::npos || up.find("Gbps") != std::string::npos) {
+            node.Up = up;
+            // 提取数值部分设置UpSpeed
+            std::string speed_val = up;
+            speed_val = regReplace(speed_val, " ?(\\w*bps)", "");
+            node.UpSpeed = to_int(speed_val);
+        } else {
+            node.UpSpeed = to_int(up);
+            if (node.UpSpeed > 0) {
+                node.Up = up + " Mbps"; // 默认单位为Mbps
+            }
+        }
+    }
+    
+    if (!down.empty()) {
+        if (down.find("bps") != std::string::npos || down.find("Mbps") != std::string::npos || 
+            down.find("Kbps") != std::string::npos || down.find("Gbps") != std::string::npos) {
+            node.Down = down;
+            // 提取数值部分设置DownSpeed
+            std::string speed_val = down;
+            speed_val = regReplace(speed_val, " ?(\\w*bps)", "");
+            node.DownSpeed = to_int(speed_val);
+        } else {
+            node.DownSpeed = to_int(down);
+            if (node.DownSpeed > 0) {
+                node.Down = down + " Mbps"; // 默认单位为Mbps
+            }
+        }
+    }
+    
     node.Ports = ports;
     node.Password = password;
     node.OBFS = obfs;
@@ -248,6 +295,28 @@ void hysteria2Construct(
     node.CaStr = ca_str;
     node.CWND = to_int(cwnd);
     node.HopInterval = to_int(hop_interval);
+    
+    // ECH 配置
+    if (!ech_enable.empty()) {
+        node.EchEnable = tribool(ech_enable);
+    }
+    if (!ech_config.empty()) {
+        node.EchConfig = ech_config;
+    }
+    
+    // quic-go 特殊配置项
+    if (!initial_stream_receive_window.empty()) {
+        node.InitialStreamReceiveWindow = to_int(initial_stream_receive_window);
+    }
+    if (!max_stream_receive_window.empty()) {
+        node.MaxStreamReceiveWindow = to_int(max_stream_receive_window);
+    }
+    if (!initial_connection_receive_window.empty()) {
+        node.InitialConnectionReceiveWindow = to_int(initial_connection_receive_window);
+    }
+    if (!max_connection_receive_window.empty()) {
+        node.MaxConnectionReceiveWindow = to_int(max_connection_receive_window);
+    }
 }
 
 void tuicConstruct(
@@ -341,7 +410,40 @@ void vlessConstruct(
         tribool scv,
         const std::string &underlying_proxy
 ) {
+    // 保存在explodeStdVLESS中设置的Network值，因为commonConstruct会重置整个结构体
+    std::string preserved_network = node.Network;
+    std::string preserved_ws_path = node.WsPath;
+    std::string preserved_ws_headers = node.WsHeaders;
+    std::string preserved_grpc_service_name = node.GrpcServiceName;
+    std::string preserved_path = node.Path;
+    std::string preserved_host = node.Host;
+    bool preserved_tls_secure = node.TLSSecure;
+    
     commonConstruct(node, ProxyType::VLESS, group, remarks, server, port, tribool(), tfo, scv, tribool(), underlying_proxy);
+    
+    // 恢复之前设置的重要字段
+    if (!preserved_network.empty()) {
+        node.Network = preserved_network;
+    }
+    if (!preserved_ws_path.empty()) {
+        node.WsPath = preserved_ws_path;
+    }
+    if (!preserved_ws_headers.empty()) {
+        node.WsHeaders = preserved_ws_headers;
+    }
+    if (!preserved_grpc_service_name.empty()) {
+        node.GrpcServiceName = preserved_grpc_service_name;
+    }
+    if (!preserved_path.empty()) {
+        node.Path = preserved_path;
+    }
+    if (!preserved_host.empty()) {
+        node.Host = preserved_host;
+    }
+    if (preserved_tls_secure) {
+        node.TLSSecure = preserved_tls_secure;
+    }
+    
     node.UUID = uuid;
     node.SNI = sni;
     if (!alpn.empty()) {
@@ -352,6 +454,53 @@ void vlessConstruct(
     node.XTLS = to_int(xtls);
     node.PublicKey = public_key;
     node.ShortID = short_id;
+    
+    // 设置默认网络类型为tcp（仅当未设置时）
+    if (node.Network.empty()) {
+        node.Network = "tcp";
+    }
+    
+    // 根据网络类型设置传输协议专用字段
+    if (node.Network == "grpc") {
+        // 对于gRPC传输，使用Path字段存储service name
+        if (!node.Path.empty()) {
+            node.GrpcServiceName = node.Path;
+        }
+    } else if (node.Network == "ws") {
+        // 对于WebSocket传输，使用专用字段
+        if (!node.Path.empty()) {
+            node.WsPath = node.Path;
+        }
+        if (!node.Host.empty()) {
+            node.WsHeaders = node.Host;
+        }
+    }
+    
+    // 设置传输协议字段（向后兼容）
+    if (!node.Network.empty()) {
+        node.TransferProtocol = node.Network;
+    }
+    
+    // 保持TLSSecure字段的值（在explodeStdVLESS中已经设置）
+    // 如果TLSSecure未设置，则根据security参数或默认值设置
+    if (!node.TLSSecure) {
+        // 如果有Reality配置，则启用TLS
+        if (!public_key.empty() && !short_id.empty()) {
+            node.TLSSecure = true;
+        }
+        // 如果有Flow配置且包含vision，则启用TLS
+        else if (!flow.empty() && flow.find("vision") != std::string::npos) {
+            node.TLSSecure = true;
+        }
+        // 如果有SNI配置，则启用TLS
+        else if (!sni.empty()) {
+            node.TLSSecure = true;
+        }
+        // VLESS默认启用TLS
+        else {
+            node.TLSSecure = true;
+        }
+    }
 }
 
 void explodeVmess(std::string vmess, Proxy &node)
@@ -553,7 +702,7 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
             json["vmess"][i]["streamSecurity"] >> tls;
             json["vmess"][i]["security"] >> cipher;
             json["vmess"][i]["sni"] >> sni;
-            vmessConstruct(node, V2RAY_DEFAULT_GROUP, ps, add, port, type, id, aid, net, cipher, path, host, "", tls, sni, udp, tfo, scv);
+            vmessConstruct(node, V2RAY_DEFAULT_GROUP, ps, add, port, type, id, aid, net, cipher, path, host, "", tls, sni);
             break;
         case 3: //ss config
             json["vmess"][i]["id"] >> id;
@@ -1017,6 +1166,13 @@ void explodeTrojan(std::string trojan, Proxy &node)
             path = urlDecode(path);
         network = "ws";
     }
+    else if(getUrlArg(addition, "type") == "grpc")
+    {
+        path = getUrlArg(addition, "serviceName");
+        if(path.empty())
+            path = getUrlArg(addition, "path");
+        network = "grpc";
+    }
 
     if(remark.empty())
         remark = server + ":" + port;
@@ -1024,6 +1180,25 @@ void explodeTrojan(std::string trojan, Proxy &node)
         group = TROJAN_DEFAULT_GROUP;
 
     trojanConstruct(node, group, remark, server, port, psk, network, host, path, true, tribool(), tfo, scv);
+    
+    // 解析额外的字段
+    std::string fp = getUrlArg(addition, "fp");
+    if(!fp.empty())
+        node.ClientFingerprint = fp;
+    
+    std::string fingerprint = getUrlArg(addition, "fingerprint");
+    if(!fingerprint.empty())
+        node.Fingerprint = fingerprint;
+    
+    std::string alpn = getUrlArg(addition, "alpn");
+    if(!alpn.empty()) {
+        // alpn可能是逗号分隔的列表
+        node.Alpn = split(urlDecode(alpn), ",");
+    }
+    
+    std::string flow = getUrlArg(addition, "flow");
+    if(!flow.empty())
+        node.Flow = flow;
 }
 
 void explodeQuan(const std::string &quan, Proxy &node)
@@ -1204,7 +1379,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
     std::string user; //socks
     std::string ip, ipv6, private_key, public_key, mtu; //wireguard
     std::string ports, obfs_protocol, up, up_speed, down, down_speed, auth, auth_str,/* obfs, sni,*/ fingerprint, ca, ca_str, recv_window_conn, recv_window, disable_mtu_discovery, hop_interval, alpn; //hysteria
-    std::string obfs_password, cwnd; //hysteria2
+    std::string obfs_password, cwnd, ech_enable, ech_config, initial_stream_receive_window, max_stream_receive_window, initial_connection_receive_window, max_connection_receive_window; //hysteria2
     std::string uuid,/*ip , password*/ heartbeat_interval, disable_sni, reduce_rtt, request_timeout, udp_relay_mode, congestion_controller, max_udp_relay_packet_size, max_open_streams, fast_open;   //TUIC
     std::string idle_session_check_interval, idle_session_timeout, min_idle_session;
     std::string flow, xtls, short_id;
@@ -1490,8 +1665,27 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
             singleproxy["ca-str"] >>= ca_str;
             singleproxy["cwnd"] >>= cwnd;
             singleproxy["hop-interval"] >>= hop_interval;
+            
+            // ECH 配置
+            if (singleproxy["ech-opts"].IsDefined()) {
+                if (singleproxy["ech-opts"]["enable"].IsDefined()) {
+                    ech_enable = safe_as<std::string>(singleproxy["ech-opts"]["enable"]);
+                }
+                if (singleproxy["ech-opts"]["config"].IsDefined()) {
+                    singleproxy["ech-opts"]["config"] >>= ech_config;
+                }
+            }
+            
+            // quic-go 特殊配置项
+            singleproxy["initial-stream-receive-window"] >>= initial_stream_receive_window;
+            singleproxy["max-stream-receive-window"] >>= max_stream_receive_window;
+            singleproxy["initial-connection-receive-window"] >>= initial_connection_receive_window;
+            singleproxy["max-connection-receive-window"] >>= max_connection_receive_window;
 
-            hysteria2Construct(node, group, ps, server, port, ports, up, down, password, obfs, obfs_password, sni, fingerprint, alpn, ca, ca_str, cwnd, hop_interval, tfo, scv, underlying_proxy);
+            hysteria2Construct(node, group, ps, server, port, ports, up, down, password, obfs, obfs_password, 
+                             sni, fingerprint, alpn, ca, ca_str, cwnd, hop_interval, ech_enable, ech_config,
+                             initial_stream_receive_window, max_stream_receive_window, 
+                             initial_connection_receive_window, max_connection_receive_window, tfo, scv, underlying_proxy);
             break;
         case "tuic"_hash:
             group = TUIC_DEFAULT_GROUP;
@@ -1663,6 +1857,9 @@ void explodeKitsunebi(std::string kit, Proxy &node)
 
 void explodeStdHysteria2(std::string hysteria2, Proxy &node) {
     std::string add, port, password, host, insecure, up, down, alpn, obfs, obfs_password, remarks, sni, fingerprint;
+    std::string ca, ca_str, cwnd, hop_interval, ports;
+    std::string ech_enable, ech_config, initial_stream_receive_window, max_stream_receive_window;
+    std::string initial_connection_receive_window, max_connection_receive_window;
     std::string addition;
     tribool scv;
     hysteria2 = hysteria2.substr(12);
@@ -1680,6 +1877,7 @@ void explodeStdHysteria2(std::string hysteria2, Proxy &node) {
         hysteria2.erase(pos);
     }
 
+    // 从基础 URL 部分提取端口，不会被查询参数中的 mport 干扰
     if (strFind(hysteria2, "@")) {
         if (regGetMatch(hysteria2, R"(^(.*?)@(.*)[:](\d+)$)", 4, 0, &password, &add, &port))
             return;
@@ -1695,20 +1893,51 @@ void explodeStdHysteria2(std::string hysteria2, Proxy &node) {
             return;
     }
 
-    scv = getUrlArg(addition, "insecure");
+    // 基本参数
+    scv = tribool(getUrlArg(addition, "insecure"));
     up = getUrlArg(addition, "up");
     down = getUrlArg(addition, "down");
-    // the alpn is not supported officially yet
     alpn = getUrlArg(addition, "alpn");
     obfs = getUrlArg(addition, "obfs");
     obfs_password = getUrlArg(addition, "obfs-password");
     sni = getUrlArg(addition, "sni");
-
     fingerprint = getUrlArg(addition, "pinSHA256");
+    if (fingerprint.empty()) {
+        fingerprint = getUrlArg(addition, "fingerprint");
+    }
+    
+    // 新增参数支持
+    ports = getUrlArg(addition, "ports");
+    // 支持 hy2 标准的 mport 参数
+    if (ports.empty()) {
+        ports = getUrlArg(addition, "mport");
+    }
+    ca = getUrlArg(addition, "ca");
+    ca_str = getUrlArg(addition, "ca-str");
+    cwnd = getUrlArg(addition, "cwnd");
+    hop_interval = getUrlArg(addition, "hop-interval");
+    
+    // ECH 参数
+    ech_enable = getUrlArg(addition, "ech-enable");
+    if (ech_enable.empty()) {
+        ech_enable = getUrlArg(addition, "ech");
+    }
+    ech_config = getUrlArg(addition, "ech-config");
+    
+    // quic-go 特殊配置项
+    initial_stream_receive_window = getUrlArg(addition, "initial-stream-receive-window");
+    max_stream_receive_window = getUrlArg(addition, "max-stream-receive-window");
+    initial_connection_receive_window = getUrlArg(addition, "initial-connection-receive-window");
+    max_connection_receive_window = getUrlArg(addition, "max-connection-receive-window");
+
     if (remarks.empty())
         remarks = add + ":" + port;
 
-    hysteria2Construct(node, HYSTERIA2_DEFAULT_GROUP, remarks, add, port, port, up, down, password, obfs, obfs_password, sni, fingerprint, "", "", "", "", "", tribool(), scv, "");
+    hysteria2Construct(node, HYSTERIA2_DEFAULT_GROUP, remarks, add, port, ports, 
+                      up, down, password, obfs, obfs_password, sni, fingerprint, alpn, ca, ca_str, 
+                      cwnd, hop_interval, ech_enable, ech_config, initial_stream_receive_window, 
+                      max_stream_receive_window, initial_connection_receive_window, 
+                      max_connection_receive_window, tribool(), scv, "");
     return;
 }
 
@@ -1871,9 +2100,12 @@ void explodeStdVLESS(std::string vless, Proxy &node) {
         vless.erase(pos);
     }
 
-    // 支持 uuid@host:port 格式
-    if (strFind(vless, "@")) {
-        if (regGetMatch(vless, R"(^(.*?)@(.*?):(\d+)$)", 4, 0, &uuid, &add, &port))
+    pos = vless.find("@");
+    if (pos != vless.npos) {
+        // 直接从URL中提取UUID
+        uuid = vless.substr(0, pos);
+        hostinfo = vless.substr(pos + 1);
+        if (regGetMatch(hostinfo, R"(^(.*?):(\d+)$)", 3, 0, &add, &port) != 0)
             return;
     } else {
         decoded = urlSafeBase64Decode(vless);
@@ -1914,6 +2146,106 @@ void explodeStdVLESS(std::string vless, Proxy &node) {
         short_id = getUrlArg(addition, "sid");
         tfo = tribool(getUrlArg(addition, "tfo"));
         scv = tribool(getUrlArg(addition, "insecure"));
+
+        // 新增参数支持
+        std::string network = getUrlArg(addition, "type");
+        if (network.empty()) {
+            network = getUrlArg(addition, "network");
+        }
+        if (network.empty()) {
+            network = "tcp";  // 默认为tcp
+        }
+        node.Network = network;
+
+        // 处理security参数
+        std::string security = getUrlArg(addition, "security");
+        
+        // 处理TLS参数
+        std::string tls_param = getUrlArg(addition, "tls");
+        if (!tls_param.empty()) {
+            node.TLSSecure = (tls_param == "true" || tls_param == "1");
+        } else if (!security.empty()) {
+            // 根据security参数决定TLS设置
+            node.TLSSecure = (security == "tls" || security == "reality");
+        } else {
+            node.TLSSecure = true;  // VLESS默认启用TLS
+        }
+
+        std::string client_fingerprint = getUrlArg(addition, "fp");
+        if (client_fingerprint.empty()) {
+            client_fingerprint = getUrlArg(addition, "client-fingerprint");
+        }
+        if (!client_fingerprint.empty()) {
+            node.ClientFingerprint = client_fingerprint;
+        }
+
+        std::string ech_config = getUrlArg(addition, "ech");
+        if (ech_config.empty()) {
+            ech_config = getUrlArg(addition, "ech-config");
+        }
+        if (!ech_config.empty()) {
+            node.EchConfig = ech_config;
+        }
+
+        std::string support_x25519mlkem768 = getUrlArg(addition, "support-x25519mlkem768");
+        if (!support_x25519mlkem768.empty()) {
+            node.SupportX25519Mlkem768 = tribool(support_x25519mlkem768);
+        }
+
+        std::string grpc_service_name = getUrlArg(addition, "serviceName");
+        if (grpc_service_name.empty()) {
+            grpc_service_name = getUrlArg(addition, "grpc-service-name");
+        }
+        if (!grpc_service_name.empty()) {
+            node.GrpcServiceName = grpc_service_name;
+            node.Path = grpc_service_name;  // 同时设置传统字段，供vlessConstruct使用
+        }
+
+        std::string ws_path = getUrlArg(addition, "path");
+        if (ws_path.empty()) {
+            ws_path = getUrlArg(addition, "ws-path");
+        }
+        if (!ws_path.empty()) {
+            node.WsPath = ws_path;
+            node.Path = ws_path;  // 同时设置传统字段，供vlessConstruct使用
+        }
+
+        std::string ws_headers = getUrlArg(addition, "host");
+        if (ws_headers.empty()) {
+            ws_headers = getUrlArg(addition, "ws-headers");
+        }
+        if (!ws_headers.empty()) {
+            node.WsHeaders = ws_headers;
+            node.Host = ws_headers;  // 同时设置传统字段，供vlessConstruct使用
+        }
+        
+        // 对于XHTTP传输，复用WsPath和WsHeaders字段存储配置
+        // 因为XHTTP和WebSocket都使用相似的path和host配置
+
+        std::string v2ray_http_upgrade = getUrlArg(addition, "v2ray-http-upgrade");
+        if (!v2ray_http_upgrade.empty()) {
+            node.V2rayHttpUpgrade = tribool(v2ray_http_upgrade);
+        }
+
+        std::string v2ray_http_upgrade_fast_open = getUrlArg(addition, "v2ray-http-upgrade-fast-open");
+        if (!v2ray_http_upgrade_fast_open.empty()) {
+            node.V2rayHttpUpgradeFastOpen = tribool(v2ray_http_upgrade_fast_open);
+        }
+
+        // 解析UDP参数
+        std::string udp_param = getUrlArg(addition, "udp");
+        if (!udp_param.empty()) {
+            node.UDP = tribool(udp_param);
+        }
+
+        // 解析包编码参数
+        std::string packet_encoding = getUrlArg(addition, "packetEncoding");
+        if (packet_encoding.empty()) {
+            packet_encoding = getUrlArg(addition, "packet-encoding");
+        }
+        if (!packet_encoding.empty()) {
+            node.PacketEncoding = packet_encoding;
+        }
 
         if (remarks.empty()) {
             remarks = urlDecode(getUrlArg(addition, "remark"));
@@ -2010,6 +2342,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes)
         std::string itemName, itemVal, config;
         std::vector<std::string> configs, vArray, headers, header;
         tribool udp, tfo, scv, tls13;
+        std::string underlying_proxy = "";
         Proxy node;
 
         /*
@@ -2299,7 +2632,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes)
                 }
             }
 
-            trojanConstruct(node, TROJAN_DEFAULT_GROUP, remarks, server, port, password, "", host, "", true, udp, tfo, scv);
+            trojanConstruct(node, TROJAN_DEFAULT_GROUP, remarks, server, port, password, "", host, "", true, udp, tfo, scv, tribool(),  underlying_proxy);
             break;
         case "snell"_hash:
             server = trim(configs[1]);

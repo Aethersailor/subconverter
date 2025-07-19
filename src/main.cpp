@@ -1,3 +1,5 @@
+// SubConverter - Universal Proxy Subscription Converter
+// Build trigger: 2025-01-18
 #include <iostream>
 #include <string>
 #include <unistd.h>

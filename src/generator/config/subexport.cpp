@@ -25,6 +25,8 @@
 
 extern string_array ss_ciphers, ssr_ciphers;
 
+
+
 const string_array clashr_protocols = {"origin", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a", "auth_chain_b"};
 const string_array clashr_obfs = {"plain", "http_simple", "http_post", "random_head", "tls1.2_ticket_auth", "tls1.2_ticket_fastauth"};
 const string_array clash_ssr_ciphers = {"rc4-md5", "aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "chacha20-ietf", "xchacha20", "none"};
@@ -284,6 +286,8 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
 
         switch(x.Type)
         {
+        case ProxyType::Unknown:
+            continue;
         case ProxyType::Shadowsocks:
             //latest clash core removed support for chacha20 encryption
             if(ext.filter_deprecated && x.EncryptMethod == "chacha20")
@@ -312,8 +316,13 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                     singleproxy["plugin-opts"]["skip-cert-verify"] = scv.get();
                 break;
             }
+            // Shadowsocks支持UDP
+            if (udp) {
+                singleproxy["udp"] = true;
+            }
             break;
         case ProxyType::VMess:
+        {
             singleproxy["type"] = "vmess";
             singleproxy["uuid"] = x.UserId;
             singleproxy["alterId"] = x.AlterId;
@@ -323,6 +332,10 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                 singleproxy["skip-cert-verify"] = scv.get();
             if(!x.ServerName.empty())
                 singleproxy["servername"] = x.ServerName;
+            
+            // 根据mihomo标准，只在特定传输协议下设置UDP
+            bool vmess_should_enable_udp = false;
+            
             switch(hash_(x.TransferProtocol))
             {
             case "tcp"_hash:
@@ -345,6 +358,8 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                     if(!x.Edge.empty())
                         singleproxy["ws-headers"]["Edge"] = x.Edge;
                 }
+                // WebSocket传输支持UDP
+                if (udp) vmess_should_enable_udp = true;
                 break;
             case "http"_hash:
                 singleproxy["network"] = x.TransferProtocol;
@@ -365,11 +380,18 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                 singleproxy["network"] = x.TransferProtocol;
                 singleproxy["servername"] = x.Host;
                 singleproxy["grpc-opts"]["grpc-service-name"] = x.Path;
+                // gRPC传输支持UDP
+                if (udp) vmess_should_enable_udp = true;
                 break;
             default:
                 continue;
             }
-            break;
+            
+            if (vmess_should_enable_udp) {
+                singleproxy["udp"] = true;
+            }
+        }
+        break;
         case ProxyType::ShadowsocksR:
             //ignoring all nodes with unsupported obfs, protocols and encryption
             if(ext.filter_deprecated)
@@ -399,6 +421,10 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                 singleproxy["protocol-param"] = x.ProtocolParam;
                 singleproxy["obfs-param"] = x.OBFSParam;
             }
+            // ShadowsocksR支持UDP
+            if (udp) {
+                singleproxy["udp"] = true;
+            }
             break;
         case ProxyType::SOCKS5:
             singleproxy["type"] = "socks5";
@@ -412,6 +438,10 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
             }
             if(!scv.is_undef())
                 singleproxy["skip-cert-verify"] = scv.get();
+            // SOCKS5支持UDP
+            if (udp) {
+                singleproxy["udp"] = true;
+            }
             break;
         case ProxyType::HTTP:
         case ProxyType::HTTPS:
@@ -429,31 +459,87 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                 singleproxy["skip-cert-verify"] = scv.get();
             break;
         case ProxyType::Trojan:
+        {
             singleproxy["type"] = "trojan";
             singleproxy["password"] = x.Password;
+            
+            // 基本TLS配置
             if(!x.Host.empty())
                 singleproxy["sni"] = x.Host;
-            if(std::all_of(x.Password.begin(), x.Password.end(), ::isdigit) && !x.Password.empty())
-                singleproxy["password"].SetTag("str");
+            if(!x.SNI.empty())
+                singleproxy["sni"] = x.SNI;
             if(!scv.is_undef())
                 singleproxy["skip-cert-verify"] = scv.get();
-            switch(hash_(x.TransferProtocol))
-            {
-            case "tcp"_hash:
-                break;
-            case "grpc"_hash:
-                singleproxy["network"] = x.TransferProtocol;
-                if(!x.Path.empty())
-                    singleproxy["grpc-opts"]["grpc-service-name"] = x.Path;
-                break;
-            case "ws"_hash:
-                singleproxy["network"] = x.TransferProtocol;
-                singleproxy["ws-opts"]["path"] = x.Path;
-                if(!x.Host.empty())
-                    singleproxy["ws-opts"]["headers"]["Host"] = x.Host;
-                break;
+            
+            // 指纹配置
+            if(!x.Fingerprint.empty())
+                singleproxy["fingerprint"] = x.Fingerprint;
+            if(!x.ClientFingerprint.empty())
+                singleproxy["client-fingerprint"] = x.ClientFingerprint;
+            
+            // ALPN配置
+            if(!x.Alpn.empty()) {
+                singleproxy["alpn"] = x.Alpn;
             }
-            break;
+            
+            // Flow配置 (trojan-xtls)
+            if(!x.Flow.empty()) {
+                singleproxy["flow"] = x.Flow;
+            }
+            
+            // 根据mihomo标准，只在特定传输协议下设置UDP
+            bool trojan_should_enable_udp = false;
+            
+            // 传输协议配置
+            std::string network = !x.Network.empty() ? x.Network : x.TransferProtocol;
+            if (!network.empty() && network != "tcp") {
+                singleproxy["network"] = network;
+                
+                switch(hash_(network))
+                {
+                case "grpc"_hash:
+                    if(!x.Path.empty())
+                        singleproxy["grpc-opts"]["grpc-service-name"] = x.Path;
+                    if(!x.GrpcServiceName.empty())
+                        singleproxy["grpc-opts"]["grpc-service-name"] = x.GrpcServiceName;
+                    // gRPC传输支持UDP
+                    if (udp) trojan_should_enable_udp = true;
+                    break;
+                case "ws"_hash:
+                    if(!x.Path.empty())
+                        singleproxy["ws-opts"]["path"] = x.Path;
+                    if(!x.WsPath.empty())
+                        singleproxy["ws-opts"]["path"] = x.WsPath;
+                    
+                    // WebSocket headers
+                    if(!x.Host.empty())
+                        singleproxy["ws-opts"]["headers"]["Host"] = x.Host;
+                    if(!x.WsHeaders.empty())
+                        singleproxy["ws-opts"]["headers"]["Host"] = x.WsHeaders;
+                    
+                    // v2ray-http-upgrade 相关配置
+                    if(!x.V2rayHttpUpgrade.is_undef())
+                        singleproxy["ws-opts"]["v2ray-http-upgrade"] = x.V2rayHttpUpgrade.get();
+                    if(!x.V2rayHttpUpgradeFastOpen.is_undef())
+                        singleproxy["ws-opts"]["v2ray-http-upgrade-fast-open"] = x.V2rayHttpUpgradeFastOpen.get();
+                    
+                    // WebSocket传输支持UDP
+                    if (udp) trojan_should_enable_udp = true;
+                    break;
+                }
+            } else {
+                // TCP 传输，基础UDP支持
+                if (udp) trojan_should_enable_udp = true;
+            }
+            
+            if (trojan_should_enable_udp) {
+                singleproxy["udp"] = true;
+            }
+            
+            if(std::all_of(x.Password.begin(), x.Password.end(), ::isdigit) && !x.Password.empty())
+                singleproxy["password"].SetTag("str");
+        }
+        break;
         case ProxyType::Snell:
             if (x.SnellVersion >= 4)
                 continue;
@@ -532,32 +618,73 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
             break;
         case ProxyType::Hysteria2:
             singleproxy["type"] = "hysteria2";
-            if (!x.Ports.empty())
-                singleproxy["ports"] = x.Ports;
-            if (!x.Up.empty())
-                singleproxy["up"] = x.UpSpeed;
-            if (!x.Down.empty())
-                singleproxy["down"] = x.DownSpeed;
+            
+            // 必要参数 - 只在节点链接明确指定时才输出
             if (!x.Password.empty())
                 singleproxy["password"] = x.Password;
+            
+            // 端口配置 - 按照mihomo标准：port字段由通用逻辑处理，有mport/ports时额外输出ports字段
+            if (!x.Ports.empty() && x.Ports != std::to_string(x.Port))
+                singleproxy["ports"] = x.Ports;
+            
+            // 速度配置 - 严格遵循节点链接，只输出原始链接中明确指定的up/down参数
+            if (!x.Up.empty()) {
+                singleproxy["up"] = x.Up;
+            }
+            
+            if (!x.Down.empty()) {
+                singleproxy["down"] = x.Down;
+            }
+            
+            // 可选参数
+            if (x.HopInterval > 0)
+                singleproxy["hop-interval"] = x.HopInterval;
+            
+            // 混淆配置
             if (!x.OBFS.empty())
                 singleproxy["obfs"] = x.OBFS;
             if (!x.OBFSParam.empty())
                 singleproxy["obfs-password"] = x.OBFSParam;
+            
+            // TLS 配置
             if (!x.SNI.empty())
                 singleproxy["sni"] = x.SNI;
-            if (!scv.is_undef())
+            
+            // Hysteria2 协议特殊处理：节点链接的 insecure 参数优先于全局 scv 参数
+            if (!x.AllowInsecure.is_undef()) {
+                singleproxy["skip-cert-verify"] = x.AllowInsecure.get();
+            } else if (!scv.is_undef()) {
                 singleproxy["skip-cert-verify"] = scv.get();
+            }
+            if (!x.Fingerprint.empty())
+                singleproxy["fingerprint"] = x.Fingerprint;
             if (!x.Alpn.empty())
                 singleproxy["alpn"] = x.Alpn;
             if (!x.Ca.empty())
                 singleproxy["ca"] = x.Ca;
             if (!x.CaStr.empty())
                 singleproxy["ca-str"] = x.CaStr;
-            if (x.CWND)
+            
+            // ECH 配置
+            if (!x.EchEnable.is_undef() && x.EchEnable.get()) {
+                singleproxy["ech-opts"]["enable"] = true;
+                if (!x.EchConfig.empty()) {
+                    singleproxy["ech-opts"]["config"] = x.EchConfig;
+                }
+            }
+            
+            // quic-go 特殊配置项 - 只在非默认值时输出
+            if (x.CWND > 0)
                 singleproxy["cwnd"] = x.CWND;
-            if (x.HopInterval)
-                singleproxy["hop-interval"] = x.HopInterval;
+            if (x.InitialStreamReceiveWindow > 0)
+                singleproxy["initial-stream-receive-window"] = x.InitialStreamReceiveWindow;
+            if (x.MaxStreamReceiveWindow > 0)
+                singleproxy["max-stream-receive-window"] = x.MaxStreamReceiveWindow;
+            if (x.InitialConnectionReceiveWindow > 0)
+                singleproxy["initial-connection-receive-window"] = x.InitialConnectionReceiveWindow;
+            if (x.MaxConnectionReceiveWindow > 0)
+                singleproxy["max-connection-receive-window"] = x.MaxConnectionReceiveWindow;
+            
             break;
         case ProxyType::TUIC:
             singleproxy["type"] = "tuic";
@@ -610,39 +737,139 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                 singleproxy["skip-cert-verify"] = scv.get();
             break;
         case ProxyType::VLESS:
+        {
+            // 按照mihomo官方配置范例的顺序设置参数
             singleproxy["type"] = "vless";
-            singleproxy["tls"] = true;
-            if (udp)
-                singleproxy["packet-encoding"] = "xudp";
+            
+            // 基本参数：server, port, uuid
             if (!x.UUID.empty())
                 singleproxy["uuid"] = x.UUID;
-            if (!x.SNI.empty())
-                singleproxy["servername"] = x.SNI;
-            if (!x.Alpn.empty())
-                singleproxy["alpn"] = x.Alpn;
-            if (!x.Fingerprint.empty())
-                singleproxy["fingerprint"] = x.Fingerprint;
+            
+            // 网络类型
+            if (!x.Network.empty()) {
+                singleproxy["network"] = x.Network;
+            } else {
+                singleproxy["network"] = "tcp"; // 默认为tcp
+            }
+            
+            // TLS相关参数
+            if (x.TLSSecure) {
+                singleproxy["tls"] = true;
+            }
+            
+            // UDP设置（根据mihomo标准）
+            bool should_enable_udp = false;
+            if (udp) {
+                if ((x.XTLS == 2) || (!x.Flow.empty() && x.Flow.find("vision") != std::string::npos)) {
+                    // Vision流控
+                    should_enable_udp = true;
+                } else if (!x.PublicKey.empty() && !x.ShortID.empty()) {
+                    // Reality协议
+                    should_enable_udp = true;
+                } else if (x.Network == "ws") {
+                    // WebSocket传输
+                    should_enable_udp = true;
+                } else if (x.Network == "grpc") {
+                    // gRPC传输
+                    should_enable_udp = true;
+                } else if (x.Network == "xhttp") {
+                    // XHTTP传输
+                    should_enable_udp = true;
+                }
+            }
+            
+            if (should_enable_udp) {
+                singleproxy["udp"] = true;
+            }
+            
+            // Flow设置
             if (x.XTLS == 2) {
                 singleproxy["flow"] = "xtls-rprx-vision";
             } else if (!x.Flow.empty()) {
                 singleproxy["flow"] = x.Flow;
             }
-            if (!x.PublicKey.empty() && !x.ShortID.empty()) {
-                singleproxy["reality-opts"]["public-key"] = x.PublicKey;
-                singleproxy["reality-opts"]["short-id"] = x.ShortID;
-                singleproxy["client-fingerprint"] = "random";
+            
+            // client-fingerprint设置
+            if (!x.ClientFingerprint.empty()) {
+                singleproxy["client-fingerprint"] = x.ClientFingerprint;
+            } else if (!x.PublicKey.empty() && !x.ShortID.empty()) {
+                // Reality协议必须设置client-fingerprint
+                singleproxy["client-fingerprint"] = "chrome";
             }
+            
+            // servername设置（优先级高于ws host）
+            if (!x.SNI.empty())
+                singleproxy["servername"] = x.SNI;
+            
+            // skip-cert-verify设置
             if (!scv.is_undef())
                 singleproxy["skip-cert-verify"] = scv.get();
+            
+            // fingerprint设置
+            if (!x.Fingerprint.empty())
+                singleproxy["fingerprint"] = x.Fingerprint;
+            
+            // WebSocket配置
+            if (x.Network == "ws" && (!x.WsPath.empty() || !x.WsHeaders.empty())) {
+                if (!x.WsPath.empty()) {
+                    singleproxy["ws-opts"]["path"] = x.WsPath;
+                }
+                if (!x.WsHeaders.empty()) {
+                    singleproxy["ws-opts"]["headers"]["Host"] = x.WsHeaders;
+                }
+                if (!x.V2rayHttpUpgrade.is_undef()) {
+                    singleproxy["ws-opts"]["v2ray-http-upgrade"] = x.V2rayHttpUpgrade.get();
+                }
+                if (!x.V2rayHttpUpgradeFastOpen.is_undef()) {
+                    singleproxy["ws-opts"]["v2ray-http-upgrade-fast-open"] = x.V2rayHttpUpgradeFastOpen.get();
+                }
+            }
+            
+            // gRPC配置
+            if (x.Network == "grpc" && !x.GrpcServiceName.empty()) {
+                singleproxy["grpc-opts"]["grpc-service-name"] = x.GrpcServiceName;
+            }
+            
+            // Reality配置（放在最后，按照mihomo范例）
+            if (!x.PublicKey.empty() && !x.ShortID.empty()) {
+                singleproxy["reality-opts"]["public-key"] = x.PublicKey;
+                // 直接设置short-id，稍后在后处理中强制添加引号
+                singleproxy["reality-opts"]["short-id"] = x.ShortID;
+                if (!x.SupportX25519Mlkem768.is_undef()) {
+                    singleproxy["reality-opts"]["support-x25519mlkem768"] = x.SupportX25519Mlkem768.get();
+                }
+            }
+            
+            // ECH配置
+            if (!x.EchConfig.empty()) {
+                singleproxy["ech-opts"]["enable"] = true;
+                singleproxy["ech-opts"]["config"] = x.EchConfig;
+            }
+            
+            // XHTTP配置
+            if (x.Network == "xhttp") {
+                if (!x.WsPath.empty()) {
+                    std::string xhttp_path = x.WsPath;
+                    // 确保路径以/开头
+                    if (!xhttp_path.empty() && xhttp_path[0] != '/') {
+                        xhttp_path = "/" + xhttp_path;
+                    }
+                    singleproxy["xhttp-opts"]["path"] = xhttp_path;
+                }
+                if (!x.WsHeaders.empty()) {
+                    singleproxy["xhttp-opts"]["headers"]["Host"] = x.WsHeaders;
+                }
+            }
+            
             break;
+        }
         default:
             continue;
         }
 
         // UDP is not supported yet in clash using snell
         // sees in https://dreamacro.github.io/clash/configuration/outbound.html#snell
-        if(udp && x.Type != ProxyType::Snell)
-            singleproxy["udp"] = true;
+        // UDP support is now handled individually for each proxy type based on mihomo standards
         if(!tfo.is_undef())
             singleproxy["tfo"] = tfo.get();
         if(proxy_block)
@@ -677,10 +904,7 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
         string_array filtered_nodelist;
 
         singlegroup["name"] = x.Name;
-        if (x.Type == ProxyGroupType::Smart)
-            singlegroup["type"] = "url-test";
-        else
-            singlegroup["type"] = x.TypeStr();
+        singlegroup["type"] = x.TypeStr();
 
         switch(x.Type)
         {
@@ -691,7 +915,19 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
             singlegroup["strategy"] = x.StrategyStr();
             [[fallthrough]];
         case ProxyGroupType::Smart:
-            [[fallthrough]];
+            if(!x.Lazy.is_undef())
+                singlegroup["lazy"] = x.Lazy.get();
+            if(!x.UseLightGBM.is_undef())
+                singlegroup["uselightgbm"] = x.UseLightGBM.get();
+            if(!x.CollectData.is_undef())
+                singlegroup["collectdata"] = x.CollectData.get();
+            singlegroup["strategy"] = x.SmartStrategyStr();
+            if(x.PolicyPrioritySet)
+                singlegroup["policy-priority"] = x.PolicyPriority;
+            singlegroup["url"] = x.Url;
+            if(x.Interval > 0)
+                singlegroup["interval"] = x.Interval;
+            break;
         case ProxyGroupType::URLTest:
             if(!x.Lazy.is_undef())
                 singlegroup["lazy"] = x.Lazy.get();
@@ -863,10 +1099,11 @@ std::string proxyToSurge(std::vector<Proxy> &nodes, const std::string &base_conf
         std::string port = std::to_string(x.Port);
         bool &tlssecure = x.TLSSecure;
 
-        tribool udp = ext.udp, tfo = ext.tfo, scv = ext.skip_cert_verify, tls13 = ext.tls13;
+        tribool udp = ext.udp, tfo = ext.tfo, scv = ext.skip_cert_verify;
         udp.define(x.UDP);
         tfo.define(x.TCPFastOpen);
         scv.define(x.AllowInsecure);
+        tribool tls13 = ext.tls13;
         tls13.define(x.TLS13);
 
         std::string proxy, section, real_section;
@@ -902,7 +1139,7 @@ std::string proxyToSurge(std::vector<Proxy> &nodes, const std::string &base_conf
         case ProxyType::VMess:
             if(surge_ver < 4 && surge_ver != -3)
                 continue;
-            proxy = "vmess, " + hostname + ", " + port + ", username=" + id + ", tls=" + (tlssecure ? "true" : "false") +  ", vmess-aead=" + (x.AlterId == 0 ? "true" : "false");
+            proxy = "vmess, " + hostname + ", " + port + ", username=" + id + ", tls=" + (tlssecure ? "true" : "false");
             if(tlssecure && !tls13.is_undef())
                 proxy += ", tls13=" + std::string(tls13 ? "true" : "false");
             switch(hash_(transproto))
@@ -2280,6 +2517,54 @@ static std::string formatSingBoxInterval(Integer interval)
 static rapidjson::Value buildSingBoxTransport(const Proxy& proxy, rapidjson::MemoryPoolAllocator<>& allocator)
 {
     rapidjson::Value transport(rapidjson::kObjectType);
+    
+    // 处理vless的WebSocket配置
+    if (proxy.Type == ProxyType::VLESS && proxy.Network == "ws") {
+        transport.AddMember("type", "ws", allocator);
+        
+        if (!proxy.WsPath.empty()) {
+            transport.AddMember("path", rapidjson::StringRef(proxy.WsPath.c_str()), allocator);
+        } else {
+            transport.AddMember("path", "/", allocator);
+        }
+        
+        rapidjson::Value headers(rapidjson::kObjectType);
+        if (!proxy.WsHeaders.empty()) {
+            headers.AddMember("Host", rapidjson::StringRef(proxy.WsHeaders.c_str()), allocator);
+        } else if (!proxy.Host.empty()) {
+            headers.AddMember("Host", rapidjson::StringRef(proxy.Host.c_str()), allocator);
+        }
+        if (!proxy.Edge.empty()) {
+            headers.AddMember("Edge", rapidjson::StringRef(proxy.Edge.c_str()), allocator);
+        }
+        transport.AddMember("headers", headers, allocator);
+        return transport;
+    }
+    
+    // 处理vless的XHTTP配置
+    if (proxy.Type == ProxyType::VLESS && proxy.Network == "xhttp") {
+        transport.AddMember("type", "xhttp", allocator);
+        
+        if (!proxy.WsPath.empty()) {
+            transport.AddMember("path", rapidjson::StringRef(proxy.WsPath.c_str()), allocator);
+        } else {
+            transport.AddMember("path", "/", allocator);
+        }
+        
+        rapidjson::Value headers(rapidjson::kObjectType);
+        if (!proxy.WsHeaders.empty()) {
+            headers.AddMember("Host", rapidjson::StringRef(proxy.WsHeaders.c_str()), allocator);
+        } else if (!proxy.Host.empty()) {
+            headers.AddMember("Host", rapidjson::StringRef(proxy.Host.c_str()), allocator);
+        }
+        if (!proxy.Edge.empty()) {
+            headers.AddMember("Edge", rapidjson::StringRef(proxy.Edge.c_str()), allocator);
+        }
+        transport.AddMember("headers", headers, allocator);
+        return transport;
+    }
+    
+    // 处理其他协议的传输配置
     switch (hash_(proxy.TransferProtocol))
     {
         case "http"_hash:
@@ -2359,13 +2644,16 @@ void proxyToSingBox(std::vector<Proxy> &nodes, rapidjson::Document &json, std::v
 
         processRemark(x.Remark, remarks_list, false);
 
-        tribool udp = ext.udp, tfo = ext.tfo, scv = ext.skip_cert_verify;
+        tribool udp = ext.udp, tfo = ext.tfo, scv = ext.skip_cert_verify, tls13 = ext.tls13;
         udp.define(x.UDP);
         tfo.define(x.TCPFastOpen);
         scv.define(x.AllowInsecure);
+        tls13.define(x.TLS13);
         rapidjson::Value proxy(rapidjson::kObjectType);
         switch (x.Type)
         {
+            case ProxyType::Unknown:
+                continue;
             case ProxyType::Shadowsocks:
             {
                 addSingBoxCommonMembers(proxy, x, "shadowsocks", allocator);
@@ -2633,38 +2921,92 @@ void proxyToSingBox(std::vector<Proxy> &nodes, rapidjson::Document &json, std::v
                 } else if (!x.Flow.empty()) {
                     proxy.AddMember("flow", rapidjson::StringRef(x.Flow.c_str()), allocator);
                 }
+                
+                // 设置网络类型和传输配置
+                if (!x.Network.empty() && x.Network != "tcp") {
+                    proxy.AddMember("network", rapidjson::StringRef(x.Network.c_str()), allocator);
+                    
+                    // WebSocket传输配置
+                    if (x.Network == "ws") {
+                        rapidjson::Value transport = buildSingBoxTransport(x, allocator);
+                        if (!transport.ObjectEmpty()) {
+                            proxy.AddMember("transport", transport, allocator);
+                        }
+                    }
+                    
+                    // gRPC传输配置
+                    if (x.Network == "grpc" && !x.GrpcServiceName.empty()) {
+                        rapidjson::Value transport(rapidjson::kObjectType);
+                        transport.AddMember("type", "grpc", allocator);
+                        transport.AddMember("service_name", rapidjson::StringRef(x.GrpcServiceName.c_str()), allocator);
+                        proxy.AddMember("transport", transport, allocator);
+                    }
+                    
+                    // XHTTP传输配置
+                    if (x.Network == "xhttp") {
+                        rapidjson::Value transport(rapidjson::kObjectType);
+                        transport.AddMember("type", "xhttp", allocator);
+                        if (!x.WsPath.empty()) {
+                            transport.AddMember("path", rapidjson::StringRef(x.WsPath.c_str()), allocator);
+                        }
+                        if (!x.WsHeaders.empty()) {
+                            rapidjson::Value headers(rapidjson::kObjectType);
+                            headers.AddMember("Host", rapidjson::StringRef(x.WsHeaders.c_str()), allocator);
+                            transport.AddMember("headers", headers, allocator);
+                        }
+                        proxy.AddMember("transport", transport, allocator);
+                    }
+                }
+                
                 // TLS 配置
-                rapidjson::Value tls(rapidjson::kObjectType);
-                tls.AddMember("enabled", true, allocator);
+                if (x.TLSSecure) {
+                    rapidjson::Value tls(rapidjson::kObjectType);
+                    tls.AddMember("enabled", true, allocator);
 
-                if (!scv.is_undef())
-                    tls.AddMember("insecure", scv.get(), allocator);
-                if (!x.Fingerprint.empty())
-                    tls.AddMember("fingerprint", rapidjson::StringRef(x.Fingerprint.c_str()), allocator);
-                if (!x.Alpn.empty()) {
-                    rapidjson::Value alpn(rapidjson::kArrayType);
-                    for (const auto& item : x.Alpn)
-                        alpn.PushBack(rapidjson::StringRef(item.c_str()), allocator);
-                    tls.AddMember("alpn", alpn, allocator);
+                    if (!scv.is_undef())
+                        tls.AddMember("insecure", scv.get(), allocator);
+                    if (!x.Fingerprint.empty())
+                        tls.AddMember("fingerprint", rapidjson::StringRef(x.Fingerprint.c_str()), allocator);
+                    if (!x.Alpn.empty()) {
+                        rapidjson::Value alpn(rapidjson::kArrayType);
+                        for (const auto& item : x.Alpn)
+                            alpn.PushBack(rapidjson::StringRef(item.c_str()), allocator);
+                        tls.AddMember("alpn", alpn, allocator);
+                    }
+
+                    // ECH配置
+                    if (!x.EchConfig.empty()) {
+                        rapidjson::Value ech(rapidjson::kObjectType);
+                        ech.AddMember("enabled", true, allocator);
+                        ech.AddMember("config", rapidjson::StringRef(x.EchConfig.c_str()), allocator);
+                        tls.AddMember("ech", ech, allocator);
+                    }
+
+                    if (!x.PublicKey.empty() && !x.ShortID.empty()) {
+                        rapidjson::Value reality(rapidjson::kObjectType);
+                        reality.AddMember("enabled", true, allocator);
+                        if (!x.PublicKey.empty())
+                            reality.AddMember("public_key", rapidjson::StringRef(x.PublicKey.c_str()), allocator);
+                        if (!x.ShortID.empty())
+                            reality.AddMember("short_id", rapidjson::StringRef(x.ShortID.c_str()), allocator);
+                        if (!x.SupportX25519Mlkem768.is_undef()) {
+                            reality.AddMember("support_x25519mlkem768", x.SupportX25519Mlkem768.get(), allocator);
+                        }
+                        tls.AddMember("reality", reality, allocator);
+
+                        rapidjson::Value utls(rapidjson::kObjectType);
+                        utls.AddMember("enable", true, allocator);
+                        if (!x.ClientFingerprint.empty()) {
+                            utls.AddMember("fingerprint", rapidjson::StringRef(x.ClientFingerprint.c_str()), allocator);
+                        } else {
+                            std::array<std::string, 6> fingerprints = {"chrome", "firefox", "safari", "ios", "edge", "qq"};
+                            utls.AddMember("fingerprint", rapidjson::Value(fingerprints[rand() % fingerprints.size()].c_str(), allocator), allocator);
+                        }
+                        tls.AddMember("utls", utls, allocator);
+                    }
+
+                    proxy.AddMember("tls", tls, allocator);
                 }
-
-                if (!x.PublicKey.empty() && !x.ShortID.empty()) {
-                    rapidjson::Value reality(rapidjson::kObjectType);
-                    reality.AddMember("enabled", true, allocator);
-                    if (!x.PublicKey.empty())
-                        reality.AddMember("public_key", rapidjson::StringRef(x.PublicKey.c_str()), allocator);
-                    if (!x.ShortID.empty())
-                        reality.AddMember("short_id", rapidjson::StringRef(x.ShortID.c_str()), allocator);
-                    tls.AddMember("reality", reality, allocator);
-
-                    rapidjson::Value utls(rapidjson::kObjectType);
-                    utls.AddMember("enable",true,allocator);
-                    std::array<std::string, 6> fingerprints = {"chrome", "firefox", "safari", "ios", "edge", "qq"};
-                    utls.AddMember("fingerprint", rapidjson::Value(fingerprints[rand() % fingerprints.size()].c_str(), allocator), allocator);
-                    tls.AddMember("utls", utls, allocator);
-                }
-
-                proxy.AddMember("tls", tls, allocator);
 
                 break;
             }
