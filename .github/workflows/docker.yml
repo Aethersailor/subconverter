@@ -1,4 +1,5 @@
 name: Docker Image
+on:
   push:
     branches: [ master ]
     tags:
