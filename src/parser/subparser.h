@@ -77,7 +77,13 @@ void hysteria2Construct(
     const std::string &ca,
     const std::string &caStr,
     const std::string &cwnd,
-    const std::string &hop_interval, 
+    const std::string &hop_interval,
+    const std::string &ech_enable,
+    const std::string &ech_config,
+    const std::string &initial_stream_receive_window,
+    const std::string &max_stream_receive_window,
+    const std::string &initial_connection_receive_window,
+    const std::string &max_connection_receive_window,
     tribool tfo, 
     tribool scv, 
     const std::string &underlying_proxy = ""
@@ -158,11 +164,11 @@ void explodeTUIC(std::string tuic, Proxy &node);
 void explodeAnyTLS(std::string anytls, Proxy &node);
 void explodeVLESS(std::string vless, Proxy &node);
 
-/// Parse a link
+
 void explode(const std::string &link, Proxy &node);
 void explodeSSD(std::string link, std::vector<Proxy> &nodes);
 void explodeSub(std::string sub, std::vector<Proxy> &nodes);
 int explodeConf(const std::string &filepath, std::vector<Proxy> &nodes);
 int explodeConfContent(const std::string &content, std::vector<Proxy> &nodes);
 
-#endif // SUBPARSER_H_INCLUDED
+#endif

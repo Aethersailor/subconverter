@@ -30,8 +30,7 @@ std::mutex cache_rw_lock;
 
 RWLock cache_rw_lock;
 
-//std::string user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36";
-static auto user_agent_str = "subconverter/" VERSION " cURL/" LIBCURL_VERSION;
+static auto user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 struct curl_progress_data
 {
@@ -168,18 +167,8 @@ static int curlGet(const FetchArgument &argument, FetchResult &result)
     limit.size_limit = global.maxAllowedDownloadSize;
     curl_set_common_options(curl_handle, new_url.data(), &limit);
     header_list = curl_slist_append(header_list, "Content-Type: application/json;charset=utf-8");
-    if(argument.request_headers)
-    {
-        for(auto &x : *argument.request_headers)
-        {
-            auto header = x.first + ": " + x.second;
-            header_list = curl_slist_append(header_list, header.data());
-        }
-        if(!argument.request_headers->contains("User-Agent"))
-            curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, user_agent_str);
-    }
-    header_list = curl_slist_append(header_list, "SubConverter-Request: 1");
-    header_list = curl_slist_append(header_list, "SubConverter-Version: " VERSION);
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, user_agent_str);
+    header_list = curl_slist_append(header_list, "X-Service-ID: config-processor");
     if(header_list)
         curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, header_list);
 
@@ -311,7 +300,8 @@ std::string webGet(const std::string &url, const std::string &proxy, unsigned in
     if(cache_ttl > 0)
     {
         md("cache");
-        const std::string url_md5 = getMD5(url);
+        std::string cache_key = url;
+        const std::string url_md5 = getMD5(cache_key);
         const std::string path = "cache/" + url_md5, path_header = path + "_header";
         struct stat result {};
         if(stat(path.data(), &result) == 0) // cache exist

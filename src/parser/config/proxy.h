@@ -121,9 +121,9 @@ struct Proxy
 
     String Ports;
     String Up;
-    uint32_t UpSpeed;
+    uint32_t UpSpeed = 0;
     String Down;
-    uint32_t DownSpeed;
+    uint32_t DownSpeed = 0;
     String AuthStr;
     String SNI;
     String Fingerprint;
@@ -158,6 +158,23 @@ struct Proxy
     String PacketEncoding;
     String ShortID;
 
+    String Network;
+    String ClientFingerprint;
+    String EchConfig;
+    tribool SupportX25519Mlkem768;
+    String GrpcServiceName;
+    String WsPath;
+    String WsHeaders;
+    tribool V2rayHttpUpgrade;
+    tribool V2rayHttpUpgradeFastOpen;
+
+    tribool EchEnable;
+    
+    uint32_t InitialStreamReceiveWindow = 0;
+    uint32_t MaxStreamReceiveWindow = 0;
+    uint32_t InitialConnectionReceiveWindow = 0;
+    uint32_t MaxConnectionReceiveWindow = 0;
+
 };
 
 #define SS_DEFAULT_GROUP "SSProvider"
@@ -174,4 +191,4 @@ struct Proxy
 #define TUIC_DEFAULT_GROUP "TUICProvider"
 #define ANYTLS_DEFAULT_GROUP "AnyTLSProvider"
 
-#endif // PROXY_H_INCLUDED
+#endif

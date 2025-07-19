@@ -10,7 +10,7 @@
 #else
 #include <sys/types.h>
 #include <sys/stat.h>
-#define PATH_SLASH "//"
+#define PATH_SLASH "/"
 #endif // _WIN32
 
 #include <sys/types.h>
