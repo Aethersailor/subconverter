@@ -1,5 +1,4 @@
-name: Docker Image Master
-on:
+name: Docker Image
   push:
     branches: [ master ]
     tags:
