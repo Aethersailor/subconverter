@@ -913,7 +913,12 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
             break;
         case ProxyGroupType::LoadBalance:
             singlegroup["strategy"] = x.StrategyStr();
-            [[fallthrough]];
+            if(!x.Lazy.is_undef())
+                singlegroup["lazy"] = x.Lazy.get();
+            singlegroup["url"] = x.Url;
+            if(x.Interval > 0)
+                singlegroup["interval"] = x.Interval;
+            break;
         case ProxyGroupType::Smart:
             if(!x.Lazy.is_undef())
                 singlegroup["lazy"] = x.Lazy.get();
