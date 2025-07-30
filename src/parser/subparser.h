@@ -164,11 +164,11 @@ void explodeTUIC(std::string tuic, Proxy &node);
 void explodeAnyTLS(std::string anytls, Proxy &node);
 void explodeVLESS(std::string vless, Proxy &node);
 
-
+/// Parse a link
 void explode(const std::string &link, Proxy &node);
 void explodeSSD(std::string link, std::vector<Proxy> &nodes);
 void explodeSub(std::string sub, std::vector<Proxy> &nodes);
 int explodeConf(const std::string &filepath, std::vector<Proxy> &nodes);
 int explodeConfContent(const std::string &content, std::vector<Proxy> &nodes);
 
-#endif
+#endif // SUBPARSER_H_INCLUDED

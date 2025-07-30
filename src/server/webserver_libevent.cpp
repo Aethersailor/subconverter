@@ -197,7 +197,7 @@ static void on_request(evhttp_request *req, void *args)
     char *client_ip;
     u_short client_port;
     evhttp_connection_get_peer(evhttp_request_get_connection(req), &client_ip, &client_port);
-
+    //std::cerr<<"Accept connection from client "<<client_ip<<":"<<client_port<<"\n";
     writeLog(0, "Accept connection from client " + std::string(client_ip) + ":" + std::to_string(client_port), LOG_LEVEL_DEBUG);
 
     if (internal_flag != nullptr && std::string(internal_flag) == "config-processor")
@@ -247,8 +247,14 @@ static void on_request(evhttp_request *req, void *args)
     }
     request.url = uri;
 
-
-    request.headers.emplace("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+    // 传递用户的UA给机场
+    const char *user_ua = evhttp_find_header(req->input_headers, "User-Agent");
+    if (user_ua != nullptr && strlen(user_ua) > 0) {
+        request.headers.emplace("User-Agent", user_ua);
+    } else {
+        // 如果没有用户UA，使用clash.meta UA
+        request.headers.emplace("User-Agent", "clash.meta");
+    }
     request.headers.emplace("X-Client-IP", client_ip);
 
     std::string return_data;
@@ -288,9 +294,9 @@ static void on_request(evhttp_request *req, void *args)
         return_data = "File not found.";
         evbuffer_add(output_buffer, return_data.data(), return_data.size());
         evhttp_send_reply(req, HTTP_NOTFOUND, nullptr, output_buffer);
-
+        //evhttp_send_error(req, HTTP_NOTFOUND, "Resource not found");
         break;
-    default:
+    default: //undefined behavior
         evhttp_send_error(req, HTTP_INTERNAL, nullptr);
     }
     buffer_cleanup(output_buffer);
@@ -302,7 +308,7 @@ int WebServer::start_web_server(listener_args *args)
     int port = args->port;
     if (!event_init())
     {
-
+        //std::cerr << "Failed to init libevent." << std::endl;
         writeLog(0, "Failed to init libevent.", LOG_LEVEL_FATAL);
         return -1;
     }
@@ -311,7 +317,7 @@ int WebServer::start_web_server(listener_args *args)
     std::unique_ptr<evhttp, decltype(&evhttp_free)> server(evhttp_start(SrvAddress, SrvPort), &evhttp_free);
     if (!server)
     {
-
+        //std::cerr << "Failed to init http server." << std::endl;
         writeLog(0, "Failed to init http server.", LOG_LEVEL_FATAL);
         return -1;
     }
@@ -321,7 +327,7 @@ int WebServer::start_web_server(listener_args *args)
     evhttp_set_timeout(server.get(), 30);
     if (event_dispatch() == -1)
     {
-
+        //std::cerr << "Failed to run message loop." << std::endl;
         writeLog(0, "Failed to run message loop.", LOG_LEVEL_FATAL);
         return -1;
     }
@@ -332,7 +338,7 @@ int WebServer::start_web_server(listener_args *args)
 static void* httpserver_dispatch(void *arg)
 {
     event_base_dispatch(reinterpret_cast<event_base*>(arg));
-    event_base_free(reinterpret_cast<event_base*>(arg));
+    event_base_free(reinterpret_cast<event_base*>(arg)); //free resources
     return nullptr;
 }
 
@@ -370,7 +376,7 @@ static int httpserver_bindsocket(std::string listen_address, int listen_port, in
     }
 
     unsigned long ul = 1;
-    ioctlsocket(nfd, FIONBIO, &ul);
+    ioctlsocket(nfd, FIONBIO, &ul); //set to non-blocking mode
 
     return nfd;
 }
@@ -407,14 +413,14 @@ int WebServer::start_web_server_multi(listener_args *args)
     {
         if (args->looper_callback != nullptr)
             args->looper_callback();
-        std::this_thread::sleep_for(std::chrono::milliseconds(args->looper_interval));
+        std::this_thread::sleep_for(std::chrono::milliseconds(args->looper_interval)); //block forever until receive stop signal
     }
 
     for (int i = 0; i < nthreads; i++)
-        event_base_loopbreak(base[i]);
+        event_base_loopbreak(base[i]); //stop the loop
 
-    shutdown(nfd, SD_BOTH);
-    closesocket(nfd);
+    shutdown(nfd, SD_BOTH); //stop accept call
+    closesocket(nfd); //close listener socket
 
     return 0;
 }

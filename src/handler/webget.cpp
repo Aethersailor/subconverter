@@ -30,7 +30,7 @@ std::mutex cache_rw_lock;
 
 RWLock cache_rw_lock;
 
-static auto user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
 
 struct curl_progress_data
 {
@@ -167,8 +167,20 @@ static int curlGet(const FetchArgument &argument, FetchResult &result)
     limit.size_limit = global.maxAllowedDownloadSize;
     curl_set_common_options(curl_handle, new_url.data(), &limit);
     header_list = curl_slist_append(header_list, "Content-Type: application/json;charset=utf-8");
-    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, user_agent_str);
+    
+    // 传递用户的UA给机场
+    std::string final_ua = "clash.meta"; // 默认使用clash.meta UA
+    if (argument.request_headers) {
+        auto ua_iter = argument.request_headers->find("User-Agent");
+        if (ua_iter != argument.request_headers->end() && !ua_iter->second.empty()) {
+            final_ua = ua_iter->second;
+        }
+    }
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, final_ua.c_str());
+    
+    // 使用系统服务标识来防止循环请求，同时隐藏subconverter特征
     header_list = curl_slist_append(header_list, "X-Service-ID: config-processor");
+    // 完全移除版本头部，避免向机场暴露任何subconverter特征
     if(header_list)
         curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, header_list);
 
@@ -300,6 +312,8 @@ std::string webGet(const std::string &url, const std::string &proxy, unsigned in
     if(cache_ttl > 0)
     {
         md("cache");
+        // 由于不再传递用户头部，缓存键只依赖URL
+        // 这样简化了缓存逻辑，所有相同URL的请求都使用相同缓存
         std::string cache_key = url;
         const std::string url_md5 = getMD5(cache_key);
         const std::string path = "cache/" + url_md5, path_header = path + "_header";

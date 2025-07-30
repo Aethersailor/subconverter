@@ -39,8 +39,14 @@ static httplib::Server::Handler makeHandler(const responseRoute &rr)
         Response resp;
         req.method = request.method;
         req.url = request.path;
-
-        req.headers.emplace("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+        // 传递用户的UA给机场
+        std::string user_ua = request.get_header_value("User-Agent");
+        if (!user_ua.empty()) {
+            req.headers.emplace("User-Agent", user_ua);
+        } else {
+            // 如果没有用户UA，使用clash.meta UA
+            req.headers.emplace("User-Agent", "clash.meta");
+        }
         
         req.argument = request.params;
         if (request.method == "POST" || request.method == "PUT" || request.method == "PATCH")

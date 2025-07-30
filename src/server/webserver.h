@@ -26,7 +26,7 @@ struct Response
     string_icase_map headers;
 };
 
-using response_callback = std::string (*)(Request&, Response&);
+using response_callback = std::string (*)(Request&, Response&); //process arguments and POST data and return served-content
 
 #define RESPONSE_CALLBACK_ARGS Request &request, Response &response
 
