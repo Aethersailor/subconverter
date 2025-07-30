@@ -10,6 +10,10 @@ Utility to convert between various proxy subscription formats.
 
 ## 新增内容
 
+2025/7/30
+
+ - 修复一些 BUG
+
 2025/7/17
 
  - 完整支持对携带 [mihomo 完整示例配置](https://github.com/MetaCubeX/mihomo/blob/Meta/docs/config.yaml) 中任意 VLESS 节点参数的节点链接进行转换。
