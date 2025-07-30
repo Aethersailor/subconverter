@@ -66,7 +66,7 @@ const std::vector<UAProfile> UAMatchList = {
     {"ClashX Pro","","","clash",true},
     {"ClashX","\\/([0-9.]+)","0.13","clash",true},
     {"Clash","","","clash",true},
-    {"clash.meta","","","clash",true},
+    {"clash.meta","","","clash",true}, /// 添加 clash.meta 支持新字段名
     {"Kitsunebi","","","v2ray"},
     {"Loon","","","loon"},
     {"Pharos","","","mixed"},
@@ -115,13 +115,8 @@ void matchUserAgent(const std::string &user_agent, std::string &target, tribool 
     if(user_agent.empty())
         return;
     
-    std::string lower_ua = user_agent;
-    std::transform(lower_ua.begin(), lower_ua.end(), lower_ua.begin(), ::tolower);
-    if(strFind(lower_ua, "clash"))
-    {
-        return;
-    }
-    
+    // 100%传递用户的UA，不再进行任何特殊处理
+    // 所有UA都按原样处理，确保完全传递用户意图
     for(const UAProfile &x : UAMatchList)
     {
         if(startsWith(user_agent, x.head))
@@ -317,6 +312,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     std::string argTarget = getUrlArg(argument, "target"), argSurgeVer = getUrlArg(argument, "ver");
     tribool argClashNewField = getUrlArg(argument, "new_name");
     int intSurgeVer = !argSurgeVer.empty() ? to_int(argSurgeVer, 3) : 3;
+    // 完全禁用UA识别，所有请求都按浏览器方式处理，避免客户端特定逻辑
     // if(argTarget == "auto")
     //     matchUserAgent(request.headers["User-Agent"], argTarget, argClashNewField, intSurgeVer);
 
@@ -620,7 +616,8 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     parse_set.time_rules = &time_temp;
     parse_set.sub_info = &subInfo;
     parse_set.authorized = authorized;
-    parse_set.request_header = nullptr;
+    // 允许传递用户头部给机场
+    parse_set.request_header = &request.headers;
     parse_set.custom_user_agent = &argUserAgent;
     parse_set.js_runtime = ext.js_runtime;
     parse_set.js_context = ext.js_context;

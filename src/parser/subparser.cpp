@@ -23,7 +23,7 @@ string_array ssr_ciphers = {"none", "table", "rc4", "rc4-md5", "aes-128-cfb", "a
 std::map<std::string, std::string> parsedMD5;
 std::string modSSMD5 = "f7653207090ce3389115e9c88541afe0";
 
-
+//remake from speedtestutil
 
 void commonConstruct(Proxy &node, ProxyType type, const std::string &group, const std::string &remarks, const std::string &server, const std::string &port, const tribool &udp, const tribool &tfo, const tribool &scv, const tribool &tls13,  const std::string& underlying_proxy)
 {
@@ -108,6 +108,7 @@ void trojanConstruct(Proxy &node, const std::string &group, const std::string &r
     node.Network = network.empty() ? "tcp" : network;
     node.Path = path;
     
+    // 设置专用字段
     if (network == "grpc") {
         node.GrpcServiceName = path;
     } else if (network == "ws") {
@@ -247,19 +248,19 @@ void hysteria2Construct(
 ) {
     commonConstruct(node, ProxyType::Hysteria2, group, remarks, server, port, tribool(), tfo, scv, tribool(), underlying_proxy);
     
-    
+    // 速度参数处理 - 支持带单位和不带单位的格式
     if (!up.empty()) {
         if (up.find("bps") != std::string::npos || up.find("Mbps") != std::string::npos || 
             up.find("Kbps") != std::string::npos || up.find("Gbps") != std::string::npos) {
             node.Up = up;
-    
+            // 提取数值部分设置UpSpeed
             std::string speed_val = up;
             speed_val = regReplace(speed_val, " ?(\\w*bps)", "");
             node.UpSpeed = to_int(speed_val);
         } else {
             node.UpSpeed = to_int(up);
             if (node.UpSpeed > 0) {
-                node.Up = up + " Mbps";
+                node.Up = up + " Mbps"; // 默认单位为Mbps
             }
         }
     }
@@ -268,22 +269,25 @@ void hysteria2Construct(
         if (down.find("bps") != std::string::npos || down.find("Mbps") != std::string::npos || 
             down.find("Kbps") != std::string::npos || down.find("Gbps") != std::string::npos) {
             node.Down = down;
-    
+            // 提取数值部分设置DownSpeed
             std::string speed_val = down;
             speed_val = regReplace(speed_val, " ?(\\w*bps)", "");
             node.DownSpeed = to_int(speed_val);
         } else {
             node.DownSpeed = to_int(down);
             if (node.DownSpeed > 0) {
-                node.Down = down + " Mbps";
+                node.Down = down + " Mbps"; // 默认单位为Mbps
             }
         }
     }
     
     node.Ports = ports;
     node.Password = password;
-    node.OBFS = obfs;
-    node.OBFSParam = obfs_password;
+    // Only set obfs parameters if obfs is not empty and not "none"
+    if (!obfs.empty() && obfs != "none") {
+        node.OBFS = obfs;
+        node.OBFSParam = obfs_password;
+    }
     node.SNI = sni;
     node.Fingerprint = fingerprint;
     if (!alpn.empty())
@@ -409,7 +413,7 @@ void vlessConstruct(
         tribool scv,
         const std::string &underlying_proxy
 ) {
-
+    // 保存在explodeStdVLESS中设置的Network值，因为commonConstruct会重置整个结构体
     std::string preserved_network = node.Network;
     std::string preserved_ws_path = node.WsPath;
     std::string preserved_ws_headers = node.WsHeaders;
@@ -420,7 +424,7 @@ void vlessConstruct(
     
     commonConstruct(node, ProxyType::VLESS, group, remarks, server, port, tribool(), tfo, scv, tribool(), underlying_proxy);
     
-
+    // 恢复之前设置的重要字段
     if (!preserved_network.empty()) {
         node.Network = preserved_network;
     }
@@ -454,19 +458,19 @@ void vlessConstruct(
     node.PublicKey = public_key;
     node.ShortID = short_id;
     
-    
+    // 设置默认网络类型为tcp（仅当未设置时）
     if (node.Network.empty()) {
         node.Network = "tcp";
     }
     
-    
+    // 根据网络类型设置传输协议专用字段
     if (node.Network == "grpc") {
-
+        // 对于gRPC传输，使用Path字段存储service name
         if (!node.Path.empty()) {
             node.GrpcServiceName = node.Path;
         }
     } else if (node.Network == "ws") {
-
+        // 对于WebSocket传输，使用专用字段
         if (!node.Path.empty()) {
             node.WsPath = node.Path;
         }
@@ -475,26 +479,27 @@ void vlessConstruct(
         }
     }
     
-
+    // 设置传输协议字段（向后兼容）
     if (!node.Network.empty()) {
         node.TransferProtocol = node.Network;
     }
     
-
+    // 保持TLSSecure字段的值（在explodeStdVLESS中已经设置）
+    // 如果TLSSecure未设置，则根据security参数或默认值设置
     if (!node.TLSSecure) {
-
+        // 如果有Reality配置，则启用TLS
         if (!public_key.empty() && !short_id.empty()) {
             node.TLSSecure = true;
         }
-
+        // 如果有Flow配置且包含vision，则启用TLS
         else if (!flow.empty() && flow.find("vision") != std::string::npos) {
             node.TLSSecure = true;
         }
-
+        // 如果有SNI配置，则启用TLS
         else if (!sni.empty()) {
             node.TLSSecure = true;
         }
-    
+        // VLESS默认启用TLS
         else {
             node.TLSSecure = true;
         }
@@ -507,7 +512,7 @@ void explodeVmess(std::string vmess, Proxy &node)
     Document jsondata;
     std::vector<std::string> vArray;
 
-    if(regMatch(vmess, "vmess://([A-Za-z0-9-_]+)\\?(.*)"))
+    if(regMatch(vmess, "vmess://([A-Za-z0-9-_]+)\\?(.*)")) //shadowrocket style link
     {
         explodeShadowrocket(vmess, node);
         return;
@@ -517,7 +522,7 @@ void explodeVmess(std::string vmess, Proxy &node)
         explodeStdVMess(vmess, node);
         return;
     }
-    else if(regMatch(vmess, "vmess1://(.*?)\\?(.*)"))
+    else if(regMatch(vmess, "vmess1://(.*?)\\?(.*)")) //kitsunebi style link
     {
         explodeKitsunebi(vmess, node);
         return;
@@ -532,8 +537,8 @@ void explodeVmess(std::string vmess, Proxy &node)
     if(jsondata.HasParseError() || !jsondata.IsObject())
         return;
 
-            version = "1";
-            GetMember(jsondata, "v", version);
+    version = "1"; //link without version will treat as version 1
+    GetMember(jsondata, "v", version); //try to get version
 
     GetMember(jsondata, "ps", ps);
     GetMember(jsondata, "add", add);
@@ -591,7 +596,7 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
         return;
     try
     {
-        if(json.HasMember("outbounds"))
+        if(json.HasMember("outbounds")) //single config
         {
             if(json["outbounds"].Size() > 0 && json["outbounds"][0].HasMember("settings") && json["outbounds"][0]["settings"].HasMember("vnext") && json["outbounds"][0]["settings"]["vnext"].Size() > 0)
             {
@@ -654,10 +659,12 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
     }
     catch(std::exception & e)
     {
-
+        //writeLog(0, "VMessConf parser throws an error. Leaving...", LOG_LEVEL_WARNING);
+        //return;
+        //ignore
         throw;
     }
-
+    //read all subscribe remark as group name
     for(uint32_t i = 0; i < json["subItem"].Size(); i++)
         subdata.insert(std::pair<std::string, std::string>(json["subItem"][i]["id"].GetString(), json["subItem"][i]["remarks"].GetString()));
 
@@ -667,7 +674,7 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
         if(json["vmess"][i]["address"].IsNull() || json["vmess"][i]["port"].IsNull() || json["vmess"][i]["id"].IsNull())
             continue;
 
-
+        //common info
         json["vmess"][i]["remarks"] >> ps;
         json["vmess"][i]["address"] >> add;
         port = GetMember(json["vmess"][i], "port");
@@ -688,7 +695,7 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
         json["vmess"][i]["configType"] >> configType;
         switch(configType)
         {
-                    case 1:
+        case 1: //vmess config
             json["vmess"][i]["headerType"] >> type;
             json["vmess"][i]["id"] >> id;
             json["vmess"][i]["alterId"] >> aid;
@@ -700,12 +707,12 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
             json["vmess"][i]["sni"] >> sni;
             vmessConstruct(node, V2RAY_DEFAULT_GROUP, ps, add, port, type, id, aid, net, cipher, path, host, "", tls, sni);
             break;
-        case 3:
+        case 3: //ss config
             json["vmess"][i]["id"] >> id;
             json["vmess"][i]["security"] >> cipher;
             ssConstruct(node, SS_DEFAULT_GROUP, ps, add, port, id, cipher, "", "", udp, tfo, scv);
             break;
-        case 4:
+        case 4: //socks config
             socksConstruct(node, SOCKS_DEFAULT_GROUP, ps, add, port, "", "", udp, tfo, scv);
             break;
         default:
@@ -720,7 +727,7 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
 void explodeSS(std::string ss, Proxy &node)
 {
     std::string ps, password, method, server, port, plugins, plugin, pluginopts, addition, group = SS_DEFAULT_GROUP, secret;
-    
+    //std::vector<std::string> args, secret;
     ss = replaceAllDistinct(ss.substr(5), "/?", "?");
     if(strFind(ss, "#"))
     {
@@ -799,14 +806,14 @@ void explodeSSD(std::string link, std::vector<Proxy> &nodes)
     rapidjson::Value singlenode;
     for(uint32_t i = 0; i < listCount; i++)
     {
-
+        //get default info
         port = GetMember(jsondata, "port");
         method = GetMember(jsondata, "encryption");
         password = GetMember(jsondata, "password");
         plugin = GetMember(jsondata, "plugin");
         pluginopts = GetMember(jsondata, "plugin_options");
 
-
+        //get server-specific info
         switch(listType)
         {
         case 0:
@@ -844,7 +851,7 @@ void explodeSSAndroid(std::string ss, std::vector<Proxy> &nodes)
 
     Document json;
     auto index = nodes.size();
-    
+    //first add some extra data before parsing
     ss = "{\"nodes\":" + ss + "}";
     json.Parse(ss.data());
     if(json.HasParseError() || !json.IsObject())
@@ -1662,7 +1669,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
             singleproxy["cwnd"] >>= cwnd;
             singleproxy["hop-interval"] >>= hop_interval;
             
-    
+            // ECH 配置
             if (singleproxy["ech-opts"].IsDefined()) {
                 if (singleproxy["ech-opts"]["enable"].IsDefined()) {
                     ech_enable = safe_as<std::string>(singleproxy["ech-opts"]["enable"]);
@@ -1672,7 +1679,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
                 }
             }
             
-    
+            // quic-go 特殊配置项
             singleproxy["initial-stream-receive-window"] >>= initial_stream_receive_window;
             singleproxy["max-stream-receive-window"] >>= max_stream_receive_window;
             singleproxy["initial-connection-receive-window"] >>= initial_connection_receive_window;
@@ -1897,6 +1904,9 @@ void explodeStdHysteria2(std::string hysteria2, Proxy &node) {
     obfs = getUrlArg(addition, "obfs");
     obfs_password = getUrlArg(addition, "obfs-password");
     sni = getUrlArg(addition, "sni");
+    if (sni.empty()) {
+        sni = getUrlArg(addition, "peer");
+    }
     fingerprint = getUrlArg(addition, "pinSHA256");
     if (fingerprint.empty()) {
         fingerprint = getUrlArg(addition, "fingerprint");

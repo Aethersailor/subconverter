@@ -640,10 +640,10 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
             if (x.HopInterval > 0)
                 singleproxy["hop-interval"] = x.HopInterval;
             
-            // 混淆配置
-            if (!x.OBFS.empty())
+            // 混淆配置 - only output if obfs is not empty and not "none"
+            if (!x.OBFS.empty() && x.OBFS != "none")
                 singleproxy["obfs"] = x.OBFS;
-            if (!x.OBFSParam.empty())
+            if (!x.OBFSParam.empty() && !x.OBFS.empty() && x.OBFS != "none")
                 singleproxy["obfs-password"] = x.OBFSParam;
             
             // TLS 配置

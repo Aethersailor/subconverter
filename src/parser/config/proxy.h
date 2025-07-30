@@ -158,18 +158,21 @@ struct Proxy
     String PacketEncoding;
     String ShortID;
 
-    String Network;
-    String ClientFingerprint;
-    String EchConfig;
-    tribool SupportX25519Mlkem768;
-    String GrpcServiceName;
-    String WsPath;
-    String WsHeaders;
-    tribool V2rayHttpUpgrade;
-    tribool V2rayHttpUpgradeFastOpen;
+    // VLESS specific fields
+    String Network;  // tcp, ws, grpc
+    String ClientFingerprint;  // chrome, firefox, safari, random, none
+    String EchConfig;  // ECH configuration
+    tribool SupportX25519Mlkem768;  // Reality support-x25519mlkem768
+    String GrpcServiceName;  // gRPC service name
+    String WsPath;  // WebSocket path
+    String WsHeaders;  // WebSocket headers
+    tribool V2rayHttpUpgrade;  // v2ray-http-upgrade
+    tribool V2rayHttpUpgradeFastOpen;  // v2ray-http-upgrade-fast-open
 
-    tribool EchEnable;
+    // Hysteria2 ECH specific fields
+    tribool EchEnable;  // ECH enable flag
     
+    // Hysteria2 quic-go specific fields
     uint32_t InitialStreamReceiveWindow = 0;
     uint32_t MaxStreamReceiveWindow = 0;
     uint32_t InitialConnectionReceiveWindow = 0;
@@ -191,4 +194,4 @@ struct Proxy
 #define TUIC_DEFAULT_GROUP "TUICProvider"
 #define ANYTLS_DEFAULT_GROUP "AnyTLSProvider"
 
-#endif
+#endif // PROXY_H_INCLUDED
