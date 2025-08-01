@@ -827,6 +827,7 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
             
             // gRPC配置
             if (x.Network == "grpc" && !x.GrpcServiceName.empty()) {
+                singleproxy["network"] = "grpc";
                 singleproxy["grpc-opts"]["grpc-service-name"] = x.GrpcServiceName;
             }
             

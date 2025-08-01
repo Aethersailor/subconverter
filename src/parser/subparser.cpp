@@ -469,6 +469,10 @@ void vlessConstruct(
         if (!node.Path.empty()) {
             node.GrpcServiceName = node.Path;
         }
+        // 如果没有Path但有GrpcServiceName，则设置Path
+        else if (!node.GrpcServiceName.empty()) {
+            node.Path = node.GrpcServiceName;
+        }
     } else if (node.Network == "ws") {
         // 对于WebSocket传输，使用专用字段
         if (!node.Path.empty()) {
@@ -705,7 +709,7 @@ void explodeVmessConf(std::string content, std::vector<Proxy> &nodes)
             json["vmess"][i]["streamSecurity"] >> tls;
             json["vmess"][i]["security"] >> cipher;
             json["vmess"][i]["sni"] >> sni;
-            vmessConstruct(node, V2RAY_DEFAULT_GROUP, ps, add, port, type, id, aid, net, cipher, path, host, "", tls, sni);
+            vmessConstruct(node, V2RAY_DEFAULT_GROUP, ps, add, port, type, id, aid, net, cipher, path, host, edge, tls, sni);
             break;
         case 3: //ss config
             json["vmess"][i]["id"] >> id;
@@ -1385,7 +1389,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
     std::string obfs_password, cwnd, ech_enable, ech_config, initial_stream_receive_window, max_stream_receive_window, initial_connection_receive_window, max_connection_receive_window; //hysteria2
     std::string uuid,/*ip , password*/ heartbeat_interval, disable_sni, reduce_rtt, request_timeout, udp_relay_mode, congestion_controller, max_udp_relay_packet_size, max_open_streams, fast_open;   //TUIC
     std::string idle_session_check_interval, idle_session_timeout, min_idle_session;
-    std::string flow, xtls, short_id;
+    std::string flow, xtls, short_id, client_fingerprint;
 
     string_array dns_server;
     tribool udp, tfo, scv;
@@ -1427,13 +1431,25 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
                 if(singleproxy["ws-opts"].IsDefined())
                 {
                     path = singleproxy["ws-opts"]["path"].IsDefined() ? safe_as<std::string>(singleproxy["ws-opts"]["path"]) : "/";
-                    singleproxy["ws-opts"]["headers"]["Host"] >>= host;
+                    if(singleproxy["ws-opts"]["headers"].IsDefined() && singleproxy["ws-opts"]["headers"]["Host"].IsDefined())
+                    {
+                        std::string ws_host = safe_as<std::string>(singleproxy["ws-opts"]["headers"]["Host"]);
+                        // 只有当Host不为空时才设置，避免空字符串被替换为服务器地址
+                        if(!ws_host.empty())
+                            host = ws_host;
+                    }
                     singleproxy["ws-opts"]["headers"]["Edge"] >>= edge;
                 }
                 else
                 {
                     path = singleproxy["ws-path"].IsDefined() ? safe_as<std::string>(singleproxy["ws-path"]) : "/";
-                    singleproxy["ws-headers"]["Host"] >>= host;
+                    if(singleproxy["ws-headers"].IsDefined() && singleproxy["ws-headers"]["Host"].IsDefined())
+                    {
+                        std::string ws_host = safe_as<std::string>(singleproxy["ws-headers"]["Host"]);
+                        // 只有当Host不为空时才设置，避免空字符串被替换为服务器地址
+                        if(!ws_host.empty())
+                            host = ws_host;
+                    }
                     singleproxy["ws-headers"]["Edge"] >>= edge;
                 }
                 break;
@@ -1462,10 +1478,104 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
                 singleproxy["alpn"] >>= alpn;
             singleproxy["fingerprint"] >>= fingerprint;
             singleproxy["flow"] >>= flow;
+            // 解析client-fingerprint
+            singleproxy["client-fingerprint"] >>= client_fingerprint;
+            // 解析reality-opts
             if (singleproxy["reality-opts"].IsDefined()) {
                 singleproxy["reality-opts"]["public-key"] >>= public_key;
                 singleproxy["reality-opts"]["short-id"] >>= short_id;
             }
+            
+            // 处理传输协议相关字段
+            std::string network = singleproxy["network"].IsDefined() ? safe_as<std::string>(singleproxy["network"]) : "tcp";
+            std::string path, host;
+            
+            // 根据网络类型处理不同的传输协议配置
+            switch(hash_(network))
+            {
+            case "ws"_hash:
+                if(singleproxy["ws-opts"].IsDefined())
+                {
+                    path = singleproxy["ws-opts"]["path"].IsDefined() ? safe_as<std::string>(singleproxy["ws-opts"]["path"]) : "/";
+                    if(singleproxy["ws-opts"]["headers"].IsDefined() && singleproxy["ws-opts"]["headers"]["Host"].IsDefined())
+                        singleproxy["ws-opts"]["headers"]["Host"] >>= host;
+                }
+                else
+                {
+                    path = singleproxy["ws-path"].IsDefined() ? safe_as<std::string>(singleproxy["ws-path"]) : "/";
+                    if(singleproxy["ws-headers"].IsDefined() && singleproxy["ws-headers"]["Host"].IsDefined())
+                        singleproxy["ws-headers"]["Host"] >>= host;
+                }
+                break;
+            case "h2"_hash:
+                if(singleproxy["h2-opts"].IsDefined())
+                {
+                    singleproxy["h2-opts"]["path"] >>= path;
+                    if(singleproxy["h2-opts"]["host"].IsSequence() && singleproxy["h2-opts"]["host"].size() > 0)
+                        singleproxy["h2-opts"]["host"][0] >>= host;
+                }
+                break;
+            case "grpc"_hash:
+                if(singleproxy["grpc-opts"].IsDefined())
+                {
+                    singleproxy["grpc-opts"]["grpc-service-name"] >>= path;
+                }
+                // 如果没有grpc-opts但有grpc-service-name字段，也进行处理
+                else if(singleproxy["grpc-service-name"].IsDefined())
+                {
+                    singleproxy["grpc-service-name"] >>= path;
+                }
+                // 对于gRPC传输，使用Path字段存储service name
+                if (!path.empty()) {
+                    node.GrpcServiceName = path;
+                }
+                break;
+            case "http"_hash:
+                if(singleproxy["http-opts"].IsDefined())
+                {
+                    if(singleproxy["http-opts"]["path"].IsSequence() && singleproxy["http-opts"]["path"].size() > 0)
+                        singleproxy["http-opts"]["path"][0] >>= path;
+                    if(singleproxy["http-opts"]["headers"].IsDefined() && singleproxy["http-opts"]["headers"]["Host"].IsSequence() && singleproxy["http-opts"]["headers"]["Host"].size() > 0)
+                        singleproxy["http-opts"]["headers"]["Host"][0] >>= host;
+                }
+                break;
+            default:
+                // 检查是否有grpc相关配置，如果有则强制设置为grpc
+                if(singleproxy["grpc-opts"].IsDefined() || singleproxy["grpc-service-name"].IsDefined())
+                {
+                    network = "grpc";
+                    if(singleproxy["grpc-opts"].IsDefined())
+                    {
+                        singleproxy["grpc-opts"]["grpc-service-name"] >>= path;
+                    }
+                    else if(singleproxy["grpc-service-name"].IsDefined())
+                    {
+                        singleproxy["grpc-service-name"] >>= path;
+                    }
+                }
+                else
+                {
+                    network = "tcp";
+                }
+                break;
+            }
+            
+            // 设置传输协议相关字段
+            node.Network = network;
+            node.Path = path;
+            node.Host = host;
+            
+            // 对于WebSocket，需要设置专门的WsPath和WsHeaders字段
+            if (network == "ws") {
+                node.WsPath = path;
+                node.WsHeaders = host;
+            }
+            
+            // 设置client-fingerprint到node对象
+            if (!client_fingerprint.empty()) {
+                node.ClientFingerprint = client_fingerprint;
+            }
+            
             vlessConstruct(node, group, ps, server, port, uuid, sni, alpn, fingerprint, flow, xtls, public_key, short_id, tfo, scv, underlying_proxy);
             break;
             }
@@ -1587,6 +1697,8 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes)
                 break;
             case "ws"_hash:
                 singleproxy["ws-opts"]["path"] >>= path;
+                if(singleproxy["ws-opts"]["headers"].IsDefined() && singleproxy["ws-opts"]["headers"]["Host"].IsDefined())
+                    singleproxy["ws-opts"]["headers"]["Host"] >>= host;
                 break;
             default:
                 net = "tcp";
@@ -2158,8 +2270,17 @@ void explodeStdVLESS(std::string vless, Proxy &node) {
         if (network.empty()) {
             network = getUrlArg(addition, "network");
         }
+        // 检查是否有gRPC相关参数，如果有则强制设置为grpc
         if (network.empty()) {
-            network = "tcp";  // 默认为tcp
+            std::string grpc_service_name = getUrlArg(addition, "serviceName");
+            if (grpc_service_name.empty()) {
+                grpc_service_name = getUrlArg(addition, "grpc-service-name");
+            }
+            if (!grpc_service_name.empty()) {
+                network = "grpc";
+            } else {
+                network = "tcp";  // 默认为tcp
+            }
         }
         node.Network = network;
 
