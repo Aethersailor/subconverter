@@ -1162,6 +1162,8 @@ void explodeTrojan(std::string trojan, Proxy &node)
     if(getUrlArg(addition, "ws") == "1")
     {
         path = getUrlArg(addition, "wspath");
+        // URL解码path参数，因为path可能包含URL编码的字符
+        path = urlDecode(path);
         network = "ws";
     }
     // support the trojan link format used by v2ryaN and X-ui.
@@ -1169,8 +1171,8 @@ void explodeTrojan(std::string trojan, Proxy &node)
     else if(getUrlArg(addition, "type") == "ws")
     {
         path = getUrlArg(addition, "path");
-        if(path.substr(0, 3) == "%2F")
-            path = urlDecode(path);
+        // URL解码path参数，因为path可能包含URL编码的字符
+        path = urlDecode(path);
         network = "ws";
     }
     else if(getUrlArg(addition, "type") == "grpc")
@@ -1178,6 +1180,8 @@ void explodeTrojan(std::string trojan, Proxy &node)
         path = getUrlArg(addition, "serviceName");
         if(path.empty())
             path = getUrlArg(addition, "path");
+        // URL解码path参数，因为path可能包含URL编码的字符
+        path = urlDecode(path);
         network = "grpc";
     }
 
@@ -1871,11 +1875,15 @@ void explodeStdVMess(std::string vmess, Proxy &node)
     case "ws"_hash:
         host = getUrlArg(addition, "host");
         path = getUrlArg(addition, "path");
+        // URL解码path参数，因为path可能包含URL编码的字符
+        path = urlDecode(path);
         break;
     case "quic"_hash:
         type = getUrlArg(addition, "security");
         host = getUrlArg(addition, "type");
         path = getUrlArg(addition, "key");
+        // URL解码path参数，因为path可能包含URL编码的字符
+        path = urlDecode(path);
         break;
     default:
         return;
@@ -1911,6 +1919,8 @@ void explodeShadowrocket(std::string rocket, Proxy &node)
             net = "ws";
             host = getUrlArg(addition, "obfsParam");
             path = getUrlArg(addition, "path");
+            // URL解码path参数，因为path可能包含URL编码的字符
+            path = urlDecode(path);
         }
     }
     else
@@ -1918,6 +1928,8 @@ void explodeShadowrocket(std::string rocket, Proxy &node)
         net = getUrlArg(addition, "network");
         host = getUrlArg(addition, "wsHost");
         path = getUrlArg(addition, "wspath");
+        // URL解码path参数，因为path可能包含URL编码的字符
+        path = urlDecode(path);
     }
     tls = getUrlArg(addition, "tls") == "1" ? "tls" : "";
     aid = getUrlArg(addition, "aid");
@@ -2324,6 +2336,8 @@ void explodeStdVLESS(std::string vless, Proxy &node) {
             grpc_service_name = getUrlArg(addition, "grpc-service-name");
         }
         if (!grpc_service_name.empty()) {
+            // URL解码service name参数，因为service name可能包含URL编码的字符
+            grpc_service_name = urlDecode(grpc_service_name);
             node.GrpcServiceName = grpc_service_name;
             node.Path = grpc_service_name;  // 同时设置传统字段，供vlessConstruct使用
         }
@@ -2333,6 +2347,8 @@ void explodeStdVLESS(std::string vless, Proxy &node) {
             ws_path = getUrlArg(addition, "ws-path");
         }
         if (!ws_path.empty()) {
+            // URL解码path参数，因为path可能包含URL编码的字符
+            ws_path = urlDecode(ws_path);
             node.WsPath = ws_path;
             node.Path = ws_path;  // 同时设置传统字段，供vlessConstruct使用
         }
@@ -2342,6 +2358,8 @@ void explodeStdVLESS(std::string vless, Proxy &node) {
             ws_headers = getUrlArg(addition, "ws-headers");
         }
         if (!ws_headers.empty()) {
+            // URL解码host参数，因为host可能包含URL编码的字符
+            ws_headers = urlDecode(ws_headers);
             node.WsHeaders = ws_headers;
             node.Host = ws_headers;  // 同时设置传统字段，供vlessConstruct使用
         }

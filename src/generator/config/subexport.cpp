@@ -309,7 +309,7 @@ void proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGr
                 singleproxy["plugin"] = "v2ray-plugin";
                 singleproxy["plugin-opts"]["mode"] = getUrlArg(pluginopts, "mode");
                 singleproxy["plugin-opts"]["host"] = getUrlArg(pluginopts, "host");
-                singleproxy["plugin-opts"]["path"] = getUrlArg(pluginopts, "path");
+                singleproxy["plugin-opts"]["path"] = urlDecode(getUrlArg(pluginopts, "path"));
                 singleproxy["plugin-opts"]["tls"] = pluginopts.find("tls") != std::string::npos;
                 singleproxy["plugin-opts"]["mux"] = pluginopts.find("mux") != std::string::npos;
                 if(!scv.is_undef())
@@ -1853,6 +1853,8 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
                         plugin = getUrlArg(pluginopts, "mode") == "websocket" ? "ws" : "";
                         host = getUrlArg(pluginopts, "host");
                         path = getUrlArg(pluginopts, "path");
+                        // URL解码path参数，因为path可能包含URL编码的字符
+                        path = urlDecode(path);
                         tlssecure = pluginopts.find("tls") != std::string::npos;
                         if(tlssecure && plugin == "ws")
                         {
