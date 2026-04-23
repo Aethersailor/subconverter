@@ -1,15 +1,24 @@
-# subconverter
+# subconverter (Anti-Fingerprint Edition)
+
+> **Disclaimer**: This project is forked from [MetaCubeX/subconverter](https://github.com/MetaCubeX/subconverter).
+> 
+> **Anti-Fingerprint Modifications:**
+> 1. **Dynamic User-Agent Simulation**: Changed the default UA from `subconverter/...` to dynamically follow the latest `MetaCubeX/mihomo` release version (e.g., `mihomo/1.19.24`) to simulate mainstream client behavior.
+> 2. **Remove Identifiable Headers**: Completely removed the easily detectable `SubConverter-Request` and `SubConverter-Version` headers.
+> 3. **Clean Redundant Headers**: Removed the unnecessary and identifiable `Content-Type: application/json` header in GET requests.
+> 
+> Except for these anti-blocking modifications and automated sync workflows, all other features remain identical to the upstream.
 
 Utility to convert between various proxy subscription formats.
 
-[![Build Status](https://github.com/metacubex/subconverter/actions/workflows/build.yml/badge.svg)](https://github.com/metacubex/subconverter/actions)
-[![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/metacubex/subconverter.svg)](https://github.com/metacubex/subconverter/tags)
-[![GitHub release](https://img.shields.io/github/release/metacubex/subconverter.svg)](https://github.com/metacubex/subconverter/releases)
-[![GitHub license](https://img.shields.io/github/license/metacubex/subconverter.svg)](https://github.com/metacubex/subconverter/blob/master/LICENSE)
+[![Build Status](https://github.com/Aethersailor/subconverter/actions/workflows/build.yml/badge.svg)](https://github.com/Aethersailor/subconverter/actions)
+[![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/Aethersailor/subconverter.svg)](https://github.com/Aethersailor/subconverter/tags)
+[![GitHub release](https://img.shields.io/github/release/Aethersailor/subconverter.svg)](https://github.com/Aethersailor/subconverter/releases)
+[![GitHub license](https://img.shields.io/github/license/Aethersailor/subconverter.svg)](https://github.com/Aethersailor/subconverter/blob/master/LICENSE)
 
-[Docker README](https://github.com/metacubex/subconverter/blob/master/README-docker.md)
+[Docker README](https://github.com/Aethersailor/subconverter/blob/master/README-docker.md)
 
-[中文文档](https://github.com/metacubex/subconverter/blob/master/README-cn.md)
+[中文文档](https://github.com/Aethersailor/subconverter/blob/master/README-cn.md)
 
 - [subconverter](#subconverter)
   - [Supported Types](#supported-types)
@@ -95,7 +104,7 @@ Finally subscribe this link in Clash and you are done!
 
 ## Advanced Usage
 
-Please refer to [中文文档](https://github.com/metacubex/subconverter/blob/master/README-cn.md#%E8%BF%9B%E9%98%B6%E7%94%A8%E6%B3%95).
+Please refer to [中文文档](https://github.com/Aethersailor/subconverter/blob/master/README-cn.md#%E8%BF%9B%E9%98%B6%E7%94%A8%E6%B3%95).
 
 ## Auto Upload
 
