@@ -1,0 +1,72 @@
+name: Auto Sync from Upstream
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 每天 UTC 时间凌晨 2 点执行（北京时间上午 10 点）
+  workflow_dispatch: # 允许手动在 Actions 页面触发
+
+jobs:
+  sync-and-rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 必须拉取完整历史，否则无法 rebase
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream and Rebase
+        run: |
+          echo "Adding upstream repository..."
+          git remote add upstream https://github.com/MetaCubeX/subconverter.git
+          git fetch upstream master
+
+          echo "Rebasing local master onto upstream/master..."
+          git rebase upstream/master
+
+      - name: Inject Dynamic User-Agent
+        run: |
+          echo "Fetching latest Mihomo version..."
+          MIHOMO_VER=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+          if [ -z "$MIHOMO_VER" ]; then
+            echo "Warning: Could not fetch Mihomo version, using fallback 1.19.0"
+            MIHOMO_VER="1.19.0"
+          fi
+          echo "Latest Mihomo version: $MIHOMO_VER"
+          
+          echo "Injecting into webget.cpp..."
+          sed -i "s/MIHOMO_UA_PLACEHOLDER/mihomo\/$MIHOMO_VER/g" src/handler/webget.cpp
+          
+          echo "Amending the commit to keep history clean..."
+          git add src/handler/webget.cpp
+          # 使用 --amend 修改当前唯一的 commit，确保远程始终只有一个自定义提交
+          git commit --amend --no-edit
+
+      - name: Push to Origin
+        run: |
+          echo "Pushing changes back to origin..."
+          # 使用 force 推送，因为 rebase 会改变提交历史
+          git push origin master --force
+      - name: Sync and Push Tags
+        run: |
+          echo "Checking upstream tags..."
+          git fetch upstream --tags -f
+          
+          # 获取上游最新的版本 tag (过滤掉不合规的格式)
+          LATEST_TAG=$(git tag -l | sort -V | tail -n 1)
+          
+          if [ -n "$LATEST_TAG" ]; then
+            # 因为 rebase 改变了 hash，原有的 tag 可能还在老 hash 上
+            # 我们强制把上游最新的 tag 移动到我们包含“防屏蔽”修改的最新 master 上
+            echo "Applying upstream latest tag ($LATEST_TAG) to local master..."
+            git tag -f "$LATEST_TAG" HEAD
+            
+            # 推送 tags 到我们自己的仓库 (强制覆盖)
+            echo "Pushing tag to origin..."
+            git push origin "$LATEST_TAG" --force
+          fi

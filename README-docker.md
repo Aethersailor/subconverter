@@ -1,11 +1,11 @@
 # subconverter-docker
 
-This is a minimized image to run https://github.com/metacubex/subconverter.
+This is a minimized image to run https://github.com/Aethersailor/subconverter.
 
 For running this docker, simply use the following commands:
 ```bash
 # run the container detached, forward internal port 25500 to host port 25500
-docker run -d --restart=always -p 25500:25500 metacubex/subconverter:latest
+docker run -d --restart=always -p 25500:25500 aethersailor/subconverter:latest
 # then check its status
 curl http://localhost:25500/version
 # if you see `subconverter vx.x.x backend` then the container is up and running
@@ -16,7 +16,7 @@ Or run in docker-compose:
 version: '3'
 services:
   subconverter:
-    image: metacubex/subconverter:latest
+    image: aethersailor/subconverter:latest
     container_name: subconverter
     ports:
       - "15051:25500"
@@ -34,7 +34,7 @@ For those who want to use their own `pref` configuration and/or rules, snippets,
 ```txt
 # you can save the files you want to replace to a folder, then copy it into to the docker
 # using the latest build of the official docker
-FROM metacubex/subconverter:latest
+FROM aethersailor/subconverter:latest
 # assume your files are inside replacements/
 # subconverter folder is located in /base/, which has the same structure as the base/ folder in the repository
 COPY replacements/ /base/
