@@ -49,6 +49,7 @@ git clone --no-checkout https://github.com/Tencent/rapidjson
 cd rapidjson
 git fetch --depth=1 origin f54b0e47a08782a6131cc3d60f94d038fa6e0a51
 git checkout f54b0e47a08782a6131cc3d60f94d038fa6e0a51
+patch -p1 -i ../scripts/patches/0002-rapidjson-disable-string-ref-assignment.patch
 cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DRAPIDJSON_BUILD_DOC=OFF -DRAPIDJSON_BUILD_EXAMPLES=OFF -DRAPIDJSON_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX="$MINGW_PREFIX" -G "Unix Makefiles" .
 make install -j4
 cd ..

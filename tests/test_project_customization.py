@@ -57,6 +57,9 @@ class ProjectCustomizationTests(unittest.TestCase):
         )
         self.assertIn("sed -i '1i#include <cstdint>' src/emitterutils.cpp", script)
         self.assertEqual(script.count("-DCMAKE_POLICY_VERSION_MINIMUM=3.5"), 2)
+        self.assertIn(
+            "0002-rapidjson-disable-string-ref-assignment.patch", script
+        )
 
     def test_docker_registry_digests_are_kept_separate(self):
         workflow = (ROOT / ".github" / "workflows" / "docker.yml").read_text(
