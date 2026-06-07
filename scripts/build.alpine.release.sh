@@ -16,7 +16,7 @@ git clone --no-checkout https://github.com/jbeder/yaml-cpp
 cd yaml-cpp
 git fetch --depth=1 origin f7320141120f720aecc4c32be25586e7da9eb978
 git checkout f7320141120f720aecc4c32be25586e7da9eb978
-cmake -DCMAKE_BUILD_TYPE=Release -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF . > /dev/null
+cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF . > /dev/null
 make install -j3 > /dev/null
 cd ..
 

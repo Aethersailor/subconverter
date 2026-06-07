@@ -23,7 +23,7 @@ RUN set -eux; \
     cmake -S /tmp/quickjspp -B /tmp/quickjspp/build -DCMAKE_BUILD_TYPE=Release; \
     cmake --build /tmp/quickjspp/build --target quickjs --parallel "$THREADS"; \
     install -d /usr/lib/quickjs /usr/include/quickjs; \
-    install -m644 /tmp/quickjspp/quickjs/libquickjs.a /usr/lib/quickjs/; \
+    install -m644 /tmp/quickjspp/build/quickjs/libquickjs.a /usr/lib/quickjs/; \
     install -m644 /tmp/quickjspp/quickjs/quickjs.h /tmp/quickjspp/quickjs/quickjs-libc.h /usr/include/quickjs/; \
     install -m644 /tmp/quickjspp/quickjspp.hpp /usr/include/; \
     git clone --no-checkout https://github.com/PerMalmberg/libcron.git /tmp/libcron; \
