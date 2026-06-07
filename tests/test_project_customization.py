@@ -36,15 +36,13 @@ class ProjectCustomizationTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("sanitizeSubscriptionRequestHeaders", source)
-        for header in (
-            "Host",
-            "User-Agent",
-            "Content-Type",
-            "X-Forwarded-For",
-            "SubConverter-Request",
-            "SubConverter-Version",
-        ):
-            self.assertIn('sanitized.erase("{}")'.format(header), source)
+        self.assertIn("(void)headers;", source)
+        self.assertNotIn("string_icase_map sanitized = headers", source)
+
+        integration_test = (
+            ROOT / "scripts" / "test_outbound_headers.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('allowed = {"accept", "host", "user-agent"}', integration_test)
 
     def test_metadata_uses_full_upstream_commit(self):
         metadata = PROJECT_METADATA.load_metadata()

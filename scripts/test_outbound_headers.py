@@ -77,15 +77,10 @@ def main():
             raise RuntimeError("subconverter did not request the echo subscription")
 
         headers = CaptureHandler.captured_headers
-        forbidden = {
-            "subconverter-request",
-            "subconverter-version",
-            "x-requested-with",
-            "content-type",
-        }
-        present = sorted(forbidden.intersection(headers))
-        if present:
-            raise RuntimeError("fingerprint headers were sent: " + ", ".join(present))
+        allowed = {"accept", "host", "user-agent"}
+        unexpected = sorted(set(headers).difference(allowed))
+        if unexpected:
+            raise RuntimeError("unexpected outbound headers: " + ", ".join(unexpected))
 
         with open(".github/project-metadata.json", encoding="utf-8") as stream:
             expected_user_agent = json.load(stream)["user_agent"]

@@ -21,7 +21,7 @@
 - 出站订阅和规则请求默认使用自动跟踪的 Mihomo 最新版本 User-Agent。
 - 不发送 `SubConverter-Request`、`SubConverter-Version` 和 CORS `X-Requested-With` 指纹头。
 - GET 和 HEAD 请求不再默认发送 JSON `Content-Type`。
-- 订阅入口的客户端 UA、Host 和代理链相关请求头不会透传到目标地址。
+- 订阅入口收到的客户端、CDN 和反向代理请求头不会透传到目标地址。
 - 脚本化 HTTP 请求显式设置的 User-Agent 和 Content-Type 保持不变。
 - Docker 镜像直接从当前仓库提交构建，不会在构建过程中克隆浮动分支。
 - 提供带独立版本号的多平台二进制文件，以及 Docker Hub 和 GHCR 多架构镜像。

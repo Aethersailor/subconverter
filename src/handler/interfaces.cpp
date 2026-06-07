@@ -39,23 +39,9 @@ string_array gRegexBlacklist = {"(.*)*"};
 
 static string_icase_map sanitizeSubscriptionRequestHeaders(const string_icase_map &headers)
 {
-    string_icase_map sanitized = headers;
-    sanitized.erase("Host");
-    sanitized.erase("User-Agent");
-    sanitized.erase("Content-Type");
-    sanitized.erase("Content-Length");
-    sanitized.erase("Connection");
-    sanitized.erase("Transfer-Encoding");
-    sanitized.erase("Accept-Encoding");
-    sanitized.erase("Origin");
-    sanitized.erase("Referer");
-    sanitized.erase("X-Requested-With");
-    sanitized.erase("X-Forwarded-For");
-    sanitized.erase("X-Real-IP");
-    sanitized.erase("Forwarded");
-    sanitized.erase("SubConverter-Request");
-    sanitized.erase("SubConverter-Version");
-    return sanitized;
+    // Client and reverse-proxy headers must not cross the subscription-fetch boundary.
+    (void)headers;
+    return {};
 }
 
 std::string parseProxy(const std::string &source) {
