@@ -13,6 +13,7 @@ git clone --no-checkout https://github.com/jbeder/yaml-cpp
 cd yaml-cpp
 git fetch --depth=1 origin f7320141120f720aecc4c32be25586e7da9eb978
 git checkout f7320141120f720aecc4c32be25586e7da9eb978
+sed -i '1i#include <cstdint>' src/emitterutils.cpp
 cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF -DCMAKE_INSTALL_PREFIX="$MINGW_PREFIX" -G "Unix Makefiles" .
 make install -j4
 cd ..

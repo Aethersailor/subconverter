@@ -51,6 +51,25 @@ class ProjectCustomizationTests(unittest.TestCase):
         self.assertRegex(metadata["upstream_commit"], r"^[0-9a-f]{40}$")
         self.assertEqual(metadata["upstream_version"], "v0.9.9")
 
+    def test_windows_build_patches_pinned_yaml_cpp_for_current_compilers(self):
+        script = (ROOT / "scripts" / "build.windows.release.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sed -i '1i#include <cstdint>' src/emitterutils.cpp", script)
+        self.assertIn("-DCMAKE_POLICY_VERSION_MINIMUM=3.5", script)
+
+    def test_docker_registry_digests_are_kept_separate(self):
+        workflow = (ROOT / ".github" / "workflows" / "docker.yml").read_text(
+            encoding="utf-8"
+        )
+        for value in (
+            "steps.dockerhub_image.outputs.digest",
+            "steps.ghcr_image.outputs.digest",
+            "image-digest-dockerhub-*",
+            "image-digest-ghcr-*",
+        ):
+            self.assertIn(value, workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

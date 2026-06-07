@@ -235,8 +235,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push by digest
-        id: image
+      - name: Build and push Docker Hub image by digest
+        id: dockerhub_image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -246,23 +246,44 @@ jobs:
             PROJECT_COMMIT=${{ needs.prepare.outputs.project_commit }}
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             UPSTREAM_COMMIT=${{ needs.prepare.outputs.upstream_commit }}
-          outputs: |
-            type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-            type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
-      - name: Export digest
+      - name: Build and push GHCR image by digest
+        id: ghcr_image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: scripts/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            PROJECT_COMMIT=${{ needs.prepare.outputs.project_commit }}
+            BUILD_VERSION=${{ needs.prepare.outputs.version }}
+            UPSTREAM_COMMIT=${{ needs.prepare.outputs.upstream_commit }}
+          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export registry digests
         env:
-          DIGEST: ${{ steps.image.outputs.digest }}
+          DOCKERHUB_DIGEST: ${{ steps.dockerhub_image.outputs.digest }}
+          GHCR_DIGEST: ${{ steps.ghcr_image.outputs.digest }}
         shell: bash
         run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${DIGEST#sha256:}"
+          mkdir -p /tmp/digests/dockerhub /tmp/digests/ghcr
+          touch "/tmp/digests/dockerhub/${DOCKERHUB_DIGEST#sha256:}"
+          touch "/tmp/digests/ghcr/${GHCR_DIGEST#sha256:}"
 
-      - name: Upload digest
+      - name: Upload Docker Hub digest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: image-digest-${{ steps.platform.outputs.pair }}
-          path: /tmp/digests/*
+          name: image-digest-dockerhub-${{ steps.platform.outputs.pair }}
+          path: /tmp/digests/dockerhub/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload GHCR digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-ghcr-${{ steps.platform.outputs.pair }}
+          path: /tmp/digests/ghcr/*
           if-no-files-found: error
           retention-days: 1
 
@@ -272,16 +293,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image:
-          - aethersailor/subconverter
-          - ghcr.io/aethersailor/subconverter
+        include:
+          - image: aethersailor/subconverter
+            digest_pattern: image-digest-dockerhub-*
+          - image: ghcr.io/aethersailor/subconverter
+            digest_pattern: image-digest-ghcr-*
     name: Publish ${{ matrix.image }}
     steps:
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: /tmp/digests
-          pattern: image-digest-*
+          pattern: ${{ matrix.digest_pattern }}
           merge-multiple: true
 
       - name: Set up Docker Buildx
