@@ -56,7 +56,7 @@ class ProjectCustomizationTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("sed -i '1i#include <cstdint>' src/emitterutils.cpp", script)
-        self.assertIn("-DCMAKE_POLICY_VERSION_MINIMUM=3.5", script)
+        self.assertEqual(script.count("-DCMAKE_POLICY_VERSION_MINIMUM=3.5"), 2)
 
     def test_docker_registry_digests_are_kept_separate(self):
         workflow = (ROOT / ".github" / "workflows" / "docker.yml").read_text(
