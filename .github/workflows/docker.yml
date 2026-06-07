@@ -1,21 +1,195 @@
-name: Publish Docker Image
+name: Build and Publish Docker Images
+
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref or commit to build
+        required: false
+        type: string
+      version:
+        description: Expected application version
+        required: false
+        type: string
+      push:
+        description: Push images to registries
+        required: false
+        default: false
+        type: boolean
+      run_smoke:
+        description: Build amd64 and run integration tests
+        required: false
+        default: true
+        type: boolean
+      publish_latest:
+        description: Publish latest and edge aliases
+        required: false
+        default: false
+        type: boolean
+      publish_stable:
+        description: Publish stable alias
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref or commit to build
+        required: false
+        type: string
+      push:
+        description: Push images to registries
+        required: true
+        default: false
+        type: boolean
+      run_smoke:
+        description: Run the outbound-header smoke test before publishing
+        required: true
+        default: true
+        type: boolean
+      publish_latest:
+        description: Publish latest and edge aliases
+        required: true
+        default: false
+        type: boolean
+      publish_stable:
+        description: Publish stable alias
+        required: true
+        default: false
+        type: boolean
   push:
-    branches: [ master ]
-    tags:
-      - '**'
+    branches: [master]
+    paths-ignore:
+      - README.md
+      - .github/templates/README.md.tmpl
+
+permissions:
+  contents: read
+  packages: write
 
 concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}
+  group: docker-${{ github.workflow }}-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 env:
-  REGISTRY_IMAGE: aethersailor/subconverter
+  DOCKERHUB_IMAGE: aethersailor/subconverter
   GHCR_IMAGE: ghcr.io/aethersailor/subconverter
 
 jobs:
-  build-dockerhub:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      project_commit: ${{ steps.metadata.outputs.project_commit }}
+      project_commit_short: ${{ steps.metadata.outputs.project_commit_short }}
+      upstream_commit: ${{ steps.metadata.outputs.upstream_commit }}
+      should_push: ${{ steps.metadata.outputs.should_push }}
+      publish_latest: ${{ steps.metadata.outputs.publish_latest }}
+      publish_stable: ${{ steps.metadata.outputs.publish_stable }}
+      run_smoke: ${{ steps.metadata.outputs.run_smoke }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve build metadata
+        id: metadata
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          INPUT_PUSH: ${{ inputs.push }}
+          INPUT_LATEST: ${{ inputs.publish_latest }}
+          INPUT_STABLE: ${{ inputs.publish_stable }}
+          INPUT_SMOKE: ${{ inputs.run_smoke }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_commit="$(git rev-parse HEAD)"
+          project_commit_short="$(git rev-parse --short=8 HEAD)"
+          version="$(python3 scripts/project_metadata.py version --project-commit "$project_commit")"
+          upstream_commit="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_commit"])')"
+          python3 scripts/project_metadata.py render --check
+
+          if [[ -n "$EXPECTED_VERSION" && "$EXPECTED_VERSION" != "$version" ]]; then
+            echo "Expected version $EXPECTED_VERSION but resolved $version" >&2
+            exit 1
+          fi
+
+          should_push="$INPUT_PUSH"
+          publish_latest="$INPUT_LATEST"
+          publish_stable="$INPUT_STABLE"
+          run_smoke="${INPUT_SMOKE:-true}"
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            should_push=true
+            publish_latest=true
+            publish_stable=false
+            run_smoke=true
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "project_commit=$project_commit" >> "$GITHUB_OUTPUT"
+          echo "project_commit_short=$project_commit_short" >> "$GITHUB_OUTPUT"
+          echo "upstream_commit=$upstream_commit" >> "$GITHUB_OUTPUT"
+          echo "should_push=$should_push" >> "$GITHUB_OUTPUT"
+          echo "publish_latest=$publish_latest" >> "$GITHUB_OUTPUT"
+          echo "publish_stable=$publish_stable" >> "$GITHUB_OUTPUT"
+          echo "run_smoke=$run_smoke" >> "$GITHUB_OUTPUT"
+
+  smoke:
+    needs: prepare
+    if: needs.prepare.outputs.run_smoke == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ needs.prepare.outputs.project_commit }}
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Build smoke image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: scripts/Dockerfile
+          load: true
+          push: false
+          tags: local/subconverter:${{ needs.prepare.outputs.version }}
+          build-args: |
+            PROJECT_COMMIT=${{ needs.prepare.outputs.project_commit }}
+            BUILD_VERSION=${{ needs.prepare.outputs.version }}
+            UPSTREAM_COMMIT=${{ needs.prepare.outputs.upstream_commit }}
+
+      - name: Run image integration tests
+        env:
+          IMAGE: local/subconverter:${{ needs.prepare.outputs.version }}
+          EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm \
+            --name subconverter-smoke \
+            --add-host host.docker.internal:host-gateway \
+            -p 127.0.0.1:25500:25500 \
+            "$IMAGE"
+          trap 'docker stop subconverter-smoke >/dev/null 2>&1 || true' EXIT
+          python3 scripts/test_outbound_headers.py \
+            --service-url http://127.0.0.1:25500 \
+            --echo-host host.docker.internal \
+            --expected-version "$EXPECTED_VERSION"
+
+  build:
+    needs: [prepare, smoke]
+    if: >-
+      always() &&
+      needs.prepare.result == 'success' &&
+      needs.prepare.outputs.should_push == 'true' &&
+      (needs.smoke.result == 'success' || needs.smoke.result == 'skipped')
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: linux/amd64
@@ -27,210 +201,125 @@ jobs:
           - platform: linux/arm64
             os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
-    name: Build ${{ matrix.platform }} for Docker Hub
+    name: Image ${{ matrix.platform }}
     steps:
-      - name: Prepare
-        run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV    
+      - name: Prepare platform name
+        id: platform
+        shell: bash
+        run: echo "pair=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+        env:
+          PLATFORM: ${{ matrix.platform }}
 
-      - name: Checkout base
-        uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ needs.prepare.outputs.project_commit }}
           fetch-depth: 0
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Docker login
-        uses: docker/login-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Get commit SHA
-        if: github.ref == 'refs/heads/master'
-        id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Build and export
-        id: build
-        uses: docker/build-push-action@v5
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: scripts/Dockerfile
           platforms: ${{ matrix.platform }}
-          context: scripts/
-          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            SHA=${{ steps.vars.outputs.sha_short }}
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+            PROJECT_COMMIT=${{ needs.prepare.outputs.project_commit }}
+            BUILD_VERSION=${{ needs.prepare.outputs.version }}
+            UPSTREAM_COMMIT=${{ needs.prepare.outputs.upstream_commit }}
+          outputs: |
+            type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+            type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        shell: bash
         run: |
-          rm -rf /tmp/digests-dockerhub
-          mkdir -p /tmp/digests-dockerhub
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-dockerhub/${digest#sha256:}"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: digest-dockerhub-${{ env.PLATFORM_PAIR }}
-          path: /tmp/digests-dockerhub/*
+          name: image-digest-${{ steps.platform.outputs.pair }}
+          path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
-  build-ghcr:
+  merge:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_push == 'true'
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - platform: linux/amd64
-            os: ubuntu-latest
-          - platform: linux/386
-            os: ubuntu-latest
-          - platform: linux/arm/v7
-            os: ubuntu-24.04-arm
-          - platform: linux/arm64
-            os: ubuntu-24.04-arm
-    runs-on: ${{ matrix.os }}
-    name: Build ${{ matrix.platform }} for GHCR
-    steps:
-      - name: Prepare
-        run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV    
-
-      - name: Checkout base
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.GHCR_IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get commit SHA
-        if: github.ref == 'refs/heads/master'
-        id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Build and export
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          platforms: ${{ matrix.platform }}
-          context: scripts/
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            SHA=${{ steps.vars.outputs.sha_short }}
-          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
-        run: |
-          rm -rf /tmp/digests-ghcr
-          mkdir -p /tmp/digests-ghcr
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-ghcr/${digest#sha256:}"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: digest-ghcr-${{ env.PLATFORM_PAIR }}
-          path: /tmp/digests-ghcr/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge-dockerhub:
-    name: Merge Docker Hub
-    needs: build-dockerhub
-    runs-on: ubuntu-latest
+        image:
+          - aethersailor/subconverter
+          - ghcr.io/aethersailor/subconverter
+    name: Publish ${{ matrix.image }}
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: /tmp/digests-dockerhub
-          pattern: digest-dockerhub-*
+          path: /tmp/digests
+          pattern: image-digest-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Docker login
-        uses: docker/login-action@v3
+      - name: Log in to Docker Hub
+        if: matrix.image == 'aethersailor/subconverter'
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Create manifest list and push
-        working-directory: /tmp/digests-dockerhub
-        run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
-  merge-ghcr:
-    name: Merge GHCR
-    needs: build-ghcr
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          path: /tmp/digests-ghcr
-          pattern: digest-ghcr-*
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.GHCR_IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Log in to GHCR
+        if: startsWith(matrix.image, 'ghcr.io/')
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create manifest list and push
-        working-directory: /tmp/digests-ghcr
+      - name: Create and push manifest
+        env:
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PROJECT_COMMIT_SHORT: ${{ needs.prepare.outputs.project_commit_short }}
+          PUBLISH_LATEST: ${{ needs.prepare.outputs.publish_latest }}
+          PUBLISH_STABLE: ${{ needs.prepare.outputs.publish_stable }}
+        working-directory: /tmp/digests
+        shell: bash
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.GHCR_IMAGE }}@sha256:%s ' *)
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.GHCR_IMAGE }}:${{ steps.meta.outputs.version }}
+          set -euo pipefail
+          tags=(-t "$IMAGE:$VERSION" -t "$IMAGE:sha-$PROJECT_COMMIT_SHORT")
+          if [[ "$PUBLISH_LATEST" == "true" ]]; then
+            tags+=(-t "$IMAGE:latest" -t "$IMAGE:edge")
+          fi
+          if [[ "$PUBLISH_STABLE" == "true" ]]; then
+            tags+=(-t "$IMAGE:stable")
+          fi
+          docker buildx imagetools create "${tags[@]}" \
+            $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$VERSION"

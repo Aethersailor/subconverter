@@ -1,72 +1,453 @@
-name: Auto Sync from Upstream
+name: Sync Upstream and Publish
 
 on:
   schedule:
-    - cron: '0 2 * * *' # 每天 UTC 时间凌晨 2 点执行（北京时间上午 10 点）
-  workflow_dispatch: # 允许手动在 Actions 页面触发
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check and prepare locally without pushing or building
+        required: true
+        default: false
+        type: boolean
+      force_rebuild:
+        description: Rebuild the current commit even when metadata is unchanged
+        required: true
+        default: false
+        type: boolean
+      publish_release:
+        description: Publish an immutable GitHub Release for the resolved version
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  packages: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
 
 jobs:
-  sync-and-rebase:
+  sync:
     runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.sync.outputs.should_build }}
+      promote_required: ${{ steps.sync.outputs.promote_required }}
+      candidate_branch: ${{ steps.sync.outputs.candidate_branch }}
+      candidate_commit: ${{ steps.sync.outputs.candidate_commit }}
+      base_master: ${{ steps.sync.outputs.base_master }}
+      version: ${{ steps.sync.outputs.version }}
+      release_needed: ${{ steps.sync.outputs.release_needed }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout master
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          fetch-depth: 0 # 必须拉取完整历史，否则无法 rebase
+          ref: master
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Add Upstream and Rebase
+      - name: Prepare synchronized candidate
+        id: sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+          MANUAL_RELEASE: ${{ inputs.publish_release || false }}
+        shell: bash
         run: |
-          echo "Adding upstream repository..."
-          git remote add upstream https://github.com/MetaCubeX/subconverter.git
-          git fetch upstream master
+          set -euo pipefail
 
-          echo "Rebasing local master onto upstream/master..."
-          git rebase upstream/master
+          base_master="$(git rev-parse HEAD)"
+          old_upstream_commit="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_commit"])')"
+          old_upstream_version="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_version"])')"
+          old_user_agent="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["user_agent"])')"
 
-      - name: Inject Dynamic User-Agent
-        run: |
-          echo "Fetching latest Mihomo version..."
-          MIHOMO_VER=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
-          if [ -z "$MIHOMO_VER" ]; then
-            echo "Warning: Could not fetch Mihomo version, using fallback 1.19.0"
-            MIHOMO_VER="1.19.0"
+          git remote add upstream https://github.com/asdlokj1qpi233/subconverter.git
+          git fetch --no-tags upstream master
+          upstream_commit="$(git rev-parse upstream/master)"
+          upstream_version="$(git show upstream/master:src/version.h | sed -nE 's/^#define VERSION \"([^\"]+)\"/\1/p')"
+          if [[ ! "$upstream_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unable to resolve a valid upstream version" >&2
+            exit 1
           fi
-          echo "Latest Mihomo version: $MIHOMO_VER"
-          
-          echo "Injecting into webget.cpp..."
-          sed -i "s/MIHOMO_UA_PLACEHOLDER/mihomo\/$MIHOMO_VER/g" src/handler/webget.cpp
-          
-          echo "Amending the commit to keep history clean..."
-          git add src/handler/webget.cpp
-          # 使用 --amend 修改当前唯一的 commit，确保远程始终只有一个自定义提交
-          git commit --amend --no-edit
 
-      - name: Push to Origin
+          mihomo_tag="$(curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          if [[ ! "$mihomo_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unable to resolve a valid User-Agent version" >&2
+            exit 1
+          fi
+          user_agent="mihomo/${mihomo_tag#v}"
+
+          upstream_changed=false
+          user_agent_changed=false
+          [[ "$old_upstream_commit" != "$upstream_commit" || "$old_upstream_version" != "$upstream_version" ]] && upstream_changed=true
+          [[ "$old_user_agent" != "$user_agent" ]] && user_agent_changed=true
+
+          should_build=false
+          if [[ "$upstream_changed" == "true" || "$user_agent_changed" == "true" || "$FORCE_REBUILD" == "true" || "$MANUAL_RELEASE" == "true" ]]; then
+            should_build=true
+          fi
+
+          release_needed=false
+          if [[ "$old_upstream_version" != "$upstream_version" || "$MANUAL_RELEASE" == "true" ]]; then
+            release_needed=true
+          fi
+
+          {
+            echo "### Synchronization check"
+            echo
+            echo "- Upstream: \`$old_upstream_commit\` -> \`$upstream_commit\`"
+            echo "- Upstream version: \`$old_upstream_version\` -> \`$upstream_version\`"
+            echo "- User-Agent: \`$old_user_agent\` -> \`$user_agent\`"
+            echo "- Build required: \`$should_build\`"
+            echo "- Release required: \`$release_needed\`"
+            echo "- Dry run: \`$DRY_RUN\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          candidate_branch=""
+          candidate_commit="$base_master"
+          promote_required=false
+
+          if [[ "$upstream_changed" == "true" || "$user_agent_changed" == "true" ]]; then
+            candidate_branch="automation/sync-$GITHUB_RUN_ID"
+            git switch -c "$candidate_branch"
+
+            if [[ "$upstream_changed" == "true" ]]; then
+              set +e
+              git merge --no-commit --no-ff upstream/master
+              merge_status=$?
+              set -e
+
+              if [[ $merge_status -ne 0 ]]; then
+                mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+                project_owned=(
+                  README.md
+                  .github/ISSUE_TEMPLATE/bug_report.yml
+                  .github/ISSUE_TEMPLATE/config.yml
+                  .github/ISSUE_TEMPLATE/feature_request.yml
+                  .github/workflows/auto_sync.yml
+                  .github/workflows/build.yml
+                  .github/workflows/docker.yml
+                  .github/project-metadata.json
+                  .github/templates/README.md.tmpl
+                  scripts/Dockerfile
+                  scripts/project_metadata.py
+                  scripts/test_outbound_headers.py
+                  cmake/project_version.h.in
+                  tests/test_project_customization.py
+                  .dockerignore
+                )
+
+                for path in "${conflicts[@]}"; do
+                  if [[ "$path" == "README-cn.md" || "$path" == "README-docker.md" ]]; then
+                    git rm -f -- "$path"
+                    continue
+                  fi
+
+                  owned=false
+                  for owned_path in "${project_owned[@]}"; do
+                    if [[ "$path" == "$owned_path" ]]; then
+                      owned=true
+                      break
+                    fi
+                  done
+                  if [[ "$owned" == "true" ]]; then
+                    git checkout --ours -- "$path"
+                    git add "$path"
+                  fi
+                done
+
+                remaining="$(git diff --name-only --diff-filter=U)"
+                if [[ -n "$remaining" ]]; then
+                  echo "Unresolved upstream conflicts:" >&2
+                  echo "$remaining" >&2
+                  exit 1
+                fi
+              fi
+            fi
+
+            project_owned=(
+              README.md
+              .github/ISSUE_TEMPLATE/bug_report.yml
+              .github/ISSUE_TEMPLATE/config.yml
+              .github/ISSUE_TEMPLATE/feature_request.yml
+              .github/workflows/auto_sync.yml
+              .github/workflows/build.yml
+              .github/workflows/docker.yml
+              .github/project-metadata.json
+              .github/templates/README.md.tmpl
+              scripts/Dockerfile
+              scripts/project_metadata.py
+              scripts/test_outbound_headers.py
+              cmake/project_version.h.in
+              tests/test_project_customization.py
+              .dockerignore
+            )
+            git restore --source="$base_master" --staged --worktree -- "${project_owned[@]}"
+            git rm -f --ignore-unmatch README-cn.md README-docker.md
+
+            timestamp="$(date --iso-8601=seconds)"
+            python3 scripts/project_metadata.py update \
+              --upstream-version "$upstream_version" \
+              --upstream-commit "$upstream_commit" \
+              --user-agent "$user_agent" \
+              --timestamp "$timestamp"
+            python3 scripts/project_metadata.py render --check
+
+            git add -A
+            if git diff --cached --quiet; then
+              echo "Metadata indicated a change but the candidate tree is unchanged" >&2
+              exit 1
+            fi
+            git commit -m "chore(sync): merge upstream ${upstream_commit:0:8}"
+            candidate_commit="$(git rev-parse HEAD)"
+            promote_required=true
+
+            if [[ "$DRY_RUN" != "true" ]]; then
+              git push origin "HEAD:refs/heads/$candidate_branch"
+            fi
+          fi
+
+          version="$(python3 scripts/project_metadata.py version --project-commit "$candidate_commit")"
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            should_build=false
+            promote_required=false
+            candidate_branch=""
+          fi
+
+          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          echo "promote_required=$promote_required" >> "$GITHUB_OUTPUT"
+          echo "candidate_branch=$candidate_branch" >> "$GITHUB_OUTPUT"
+          echo "candidate_commit=$candidate_commit" >> "$GITHUB_OUTPUT"
+          echo "base_master=$base_master" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_needed=$release_needed" >> "$GITHUB_OUTPUT"
+
+  native:
+    needs: sync
+    if: needs.sync.outputs.should_build == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.sync.outputs.candidate_commit }}
+    secrets: inherit
+
+  docker_candidate:
+    needs: sync
+    if: needs.sync.outputs.should_build == 'true'
+    uses: ./.github/workflows/docker.yml
+    with:
+      ref: ${{ needs.sync.outputs.candidate_commit }}
+      version: ${{ needs.sync.outputs.version }}
+      push: false
+      run_smoke: true
+      publish_latest: false
+      publish_stable: false
+    secrets: inherit
+
+  promote:
+    needs: [sync, native, docker_candidate]
+    if: needs.sync.outputs.promote_required == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ needs.sync.outputs.candidate_commit }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fast-forward master
+        env:
+          BASE_MASTER: ${{ needs.sync.outputs.base_master }}
+          CANDIDATE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
+        shell: bash
         run: |
-          echo "Pushing changes back to origin..."
-          # 使用 force 推送，因为 rebase 会改变提交历史
-          git push origin master --force
-      - name: Sync and Push Tags
+          set -euo pipefail
+          remote_master="$(git ls-remote origin refs/heads/master | cut -f1)"
+          if [[ "$remote_master" != "$BASE_MASTER" ]]; then
+            echo "master changed during candidate validation" >&2
+            exit 1
+          fi
+          git push origin "$CANDIDATE_COMMIT:refs/heads/master"
+
+  publish:
+    needs: [sync, native, docker_candidate, promote]
+    if: >-
+      always() &&
+      needs.sync.outputs.should_build == 'true' &&
+      needs.native.result == 'success' &&
+      needs.docker_candidate.result == 'success' &&
+      (needs.promote.result == 'success' || needs.promote.result == 'skipped')
+    uses: ./.github/workflows/docker.yml
+    with:
+      ref: ${{ needs.sync.outputs.candidate_commit }}
+      version: ${{ needs.sync.outputs.version }}
+      push: true
+      run_smoke: false
+      publish_latest: true
+      publish_stable: ${{ needs.sync.outputs.release_needed == 'true' }}
+    secrets: inherit
+
+  release:
+    needs: [sync, native, publish]
+    if: needs.sync.outputs.release_needed == 'true' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ needs.sync.outputs.candidate_commit }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create immutable tag
+        env:
+          VERSION: ${{ needs.sync.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
+        shell: bash
         run: |
-          echo "Checking upstream tags..."
-          git fetch upstream --tags -f
-          
-          # 获取上游最新的版本 tag (过滤掉不合规的格式)
-          LATEST_TAG=$(git tag -l | sort -V | tail -n 1)
-          
-          if [ -n "$LATEST_TAG" ]; then
-            # 因为 rebase 改变了 hash，原有的 tag 可能还在老 hash 上
-            # 我们强制把上游最新的 tag 移动到我们包含“防屏蔽”修改的最新 master 上
-            echo "Applying upstream latest tag ($LATEST_TAG) to local master..."
-            git tag -f "$LATEST_TAG" HEAD
-            
-            # 推送 tags 到我们自己的仓库 (强制覆盖)
-            echo "Pushing tag to origin..."
-            git push origin "$LATEST_TAG" --force
+          set -euo pipefail
+          if git ls-remote --exit-code origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/$VERSION:refs/tags/$VERSION"
+            existing_commit="$(git rev-list -n 1 "$VERSION")"
+            if [[ "$existing_commit" != "$RELEASE_COMMIT" ]]; then
+              echo "Release tag $VERSION already points to $existing_commit" >&2
+              exit 1
+            fi
+            echo "Release tag $VERSION already points to the expected commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" "$RELEASE_COMMIT" -m "$VERSION"
+          git push origin "refs/tags/$VERSION"
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release-artifacts
+          pattern: subconverter-*
+          merge-multiple: true
+
+      - name: Generate checksums and notes
+        env:
+          VERSION: ${{ needs.sync.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd release-artifacts
+            sha256sum * > SHA256SUMS
+          )
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          metadata = json.loads(Path(".github/project-metadata.json").read_text())
+          notes = f"""## {os.environ['VERSION']}
+
+          - Project commit: `{os.environ['RELEASE_COMMIT']}`
+          - Upstream: `{metadata['upstream_repository']}`
+          - Upstream version: `{metadata['upstream_version']}`
+          - Upstream commit: `{metadata['upstream_commit']}`
+          - Outbound User-Agent: `{metadata['user_agent']}`
+          """
+          Path("release-notes.md").write_text(notes, encoding="utf-8")
+          PY
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ needs.sync.outputs.version }}
+          name: ${{ needs.sync.outputs.version }}
+          body_path: release-notes.md
+          files: release-artifacts/*
+          fail_on_unmatched_files: true
+
+  cleanup:
+    needs: [sync, publish, release]
+    if: >-
+      always() &&
+      needs.sync.outputs.candidate_branch != '' &&
+      needs.publish.result == 'success' &&
+      (needs.release.result == 'success' || needs.release.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: master
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete candidate branch
+        env:
+          CANDIDATE_BRANCH: ${{ needs.sync.outputs.candidate_branch }}
+        shell: bash
+        run: git push origin --delete "$CANDIDATE_BRANCH"
+
+  report:
+    needs: [sync, native, docker_candidate, promote, publish, release, cleanup]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update synchronization issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYNC_RESULT: ${{ needs.sync.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+          DOCKER_CANDIDATE_RESULT: ${{ needs.docker_candidate.result }}
+          PROMOTE_RESULT: ${{ needs.promote.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          CLEANUP_RESULT: ${{ needs.cleanup.result }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="[automation] Upstream synchronization failed"
+          issue_number="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+
+          failed=false
+          for result in "$SYNC_RESULT" "$NATIVE_RESULT" "$DOCKER_CANDIDATE_RESULT" "$PROMOTE_RESULT" "$PUBLISH_RESULT" "$RELEASE_RESULT" "$CLEANUP_RESULT"; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              failed=true
+            fi
+          done
+
+          if [[ "$failed" == "true" ]]; then
+            body="Automated synchronization failed.
+
+          - Sync: \`$SYNC_RESULT\`
+          - Native build: \`$NATIVE_RESULT\`
+          - Docker candidate: \`$DOCKER_CANDIDATE_RESULT\`
+          - Promote: \`$PROMOTE_RESULT\`
+          - Publish: \`$PUBLISH_RESULT\`
+          - Release: \`$RELEASE_RESULT\`
+          - Cleanup: \`$CLEANUP_RESULT\`
+          - Run: $RUN_URL"
+            if [[ -n "$issue_number" ]]; then
+              gh issue comment "$issue_number" --body "$body"
+            else
+              gh issue create --title "$title" --body "$body"
+            fi
+          elif [[ -n "$issue_number" ]]; then
+            gh issue comment "$issue_number" --body "Automation recovered successfully: $RUN_URL"
+            gh issue close "$issue_number" --reason completed
           fi

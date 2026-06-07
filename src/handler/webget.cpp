@@ -30,8 +30,7 @@ std::mutex cache_rw_lock;
 
 RWLock cache_rw_lock;
 
-//std::string user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36";
-static auto user_agent_str = "mihomo/1.19.24";
+static constexpr auto user_agent_str = SUBCONVERTER_OUTBOUND_USER_AGENT;
 
 struct curl_progress_data
 {
@@ -157,10 +156,7 @@ static int curlGet(const FetchArgument &argument, FetchResult &result)
     if(!argument.proxy.empty())
     {
         if(startsWith(argument.proxy, "cors:"))
-        {
-            header_list = curl_slist_append(header_list, "X-Requested-With: subconverter " VERSION);
             new_url = argument.proxy.substr(5) + argument.url;
-        }
         else
             curl_easy_setopt(curl_handle, CURLOPT_PROXY, argument.proxy.data());
     }
@@ -168,6 +164,8 @@ static int curlGet(const FetchArgument &argument, FetchResult &result)
     limit.size_limit = global.maxAllowedDownloadSize;
     curl_set_common_options(curl_handle, new_url.data(), &limit);
 
+    bool has_user_agent = false;
+    bool has_content_type = false;
     if(argument.request_headers)
     {
         for(auto &x : *argument.request_headers)
@@ -175,9 +173,15 @@ static int curlGet(const FetchArgument &argument, FetchResult &result)
             auto header = x.first + ": " + x.second;
             header_list = curl_slist_append(header_list, header.data());
         }
-        if(!argument.request_headers->contains("User-Agent"))
-            curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, user_agent_str);
+        has_user_agent = argument.request_headers->contains("User-Agent");
+        has_content_type = argument.request_headers->contains("Content-Type");
     }
+
+    if(!has_user_agent)
+        curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, user_agent_str);
+
+    if((argument.method == HTTP_POST || argument.method == HTTP_PATCH) && !has_content_type)
+        header_list = curl_slist_append(header_list, "Content-Type: application/json;charset=utf-8");
 
     if(header_list)
         curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, header_list);

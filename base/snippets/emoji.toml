@@ -335,10 +335,6 @@ match = "(乌拉圭|Uruguay)"
 emoji = "🇺🇾"
 
 [[emoji]]
-match = "(梵蒂冈|Vatican)"
-emoji = "🇻🇦"
-
-[[emoji]]
 match = "(Vietnam|越南)"
 emoji = "🇻🇳"
 

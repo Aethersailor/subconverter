@@ -1,0 +1,7 @@
+.git
+.pytest_cache
+__pycache__
+build
+cmake-build-*
+subconverter
+subconverter.exe

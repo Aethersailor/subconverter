@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "asdlokj1qpi233/subconverter",
+  "upstream_branch": "master",
+  "upstream_version": "v0.9.9",
+  "upstream_commit": "633ecd5a3b33cf288658f0910fb2cc5faabd351c",
+  "upstream_synced_at": "2026-06-07T11:08:49+08:00",
+  "user_agent": "mihomo/1.19.27",
+  "user_agent_source": "MetaCubeX/mihomo",
+  "user_agent_updated_at": "2026-06-07T11:08:49+08:00",
+  "edition": "af"
+}

@@ -3,7 +3,7 @@
 
 #include <string>
 #include <map>
-#include <algorithm>
+#include <string.h>
 
 struct strICaseComp
 {

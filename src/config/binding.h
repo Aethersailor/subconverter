@@ -239,29 +239,9 @@ namespace INIBinding
 
                 if(conf.Type == ProxyGroupType::URLTest || conf.Type == ProxyGroupType::LoadBalance || conf.Type == ProxyGroupType::Fallback)
                 {
-                    // - url-test/fallback: ...`<url>`<times>`
-                    // - load-balance:     ...`<url>`<times>`[<strategy>]
                     if(rules_upper_bound < 5)
                         continue;
-
-                    bool has_strategy = false;
-                    if(conf.Type == ProxyGroupType::LoadBalance && rules_upper_bound >= 6)
-                    {
-                        const String &maybeStrategy = vArray[rules_upper_bound - 1];
-                        switch(hash_(maybeStrategy))
-                        {
-                        case "consistent-hashing"_hash:
-                            conf.Strategy = BalanceStrategy::ConsistentHashing;
-                            has_strategy = true;
-                            break;
-                        case "round-robin"_hash:
-                            conf.Strategy = BalanceStrategy::RoundRobin;
-                            has_strategy = true;
-                            break;
-                        }
-                    }
-
-                    rules_upper_bound -= (has_strategy ? 3U : 2U);
+                    rules_upper_bound -= 2;
                     conf.Url = vArray[rules_upper_bound];
                     parseGroupTimes(vArray[rules_upper_bound + 1], &conf.Interval, &conf.Timeout, &conf.Tolerance);
                 }
