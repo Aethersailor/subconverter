@@ -15,7 +15,11 @@ class ProjectCustomizationTests(unittest.TestCase):
         metadata = PROJECT_METADATA.load_metadata()
         self.assertEqual(
             PROJECT_METADATA.build_version(metadata, "1a2b3c4d99887766"),
-            "v0.9.9-633ecd5a-af.1a2b3c4d",
+            "{}-{}-{}.1a2b3c4d".format(
+                metadata["upstream_version"],
+                metadata["upstream_commit"][:8],
+                metadata["edition"],
+            ),
         )
 
     def test_readme_matches_metadata_template(self):
@@ -47,7 +51,20 @@ class ProjectCustomizationTests(unittest.TestCase):
     def test_metadata_uses_full_upstream_commit(self):
         metadata = PROJECT_METADATA.load_metadata()
         self.assertRegex(metadata["upstream_commit"], r"^[0-9a-f]{40}$")
-        self.assertEqual(metadata["upstream_version"], "v0.9.9")
+        self.assertRegex(metadata["upstream_version"], r"^v[0-9]+\.[0-9]+\.[0-9]+$")
+
+    def test_sync_report_supports_repositories_with_issues_disabled(self):
+        workflow = (ROOT / ".github" / "workflows" / "auto_sync.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("GH_REPO: ${{ github.repository }}", workflow)
+        self.assertIn('gh api "repos/$GITHUB_REPOSITORY"', workflow)
+        self.assertIn('if [[ "$repo_has_issues" != "true" ]]', workflow)
+        self.assertNotIn(
+            "needs.publish.result == 'success' &&\n"
+            "      (needs.release.result == 'success'",
+            workflow,
+        )
 
     def test_windows_build_patches_pinned_yaml_cpp_for_current_compilers(self):
         script = (ROOT / "scripts" / "build.windows.release.sh").read_text(

@@ -385,9 +385,7 @@ jobs:
     needs: [sync, publish, release]
     if: >-
       always() &&
-      needs.sync.outputs.candidate_branch != '' &&
-      needs.publish.result == 'success' &&
-      (needs.release.result == 'success' || needs.release.result == 'skipped')
+      needs.sync.outputs.candidate_branch != ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -410,6 +408,7 @@ jobs:
       - name: Update synchronization issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           SYNC_RESULT: ${{ needs.sync.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
           DOCKER_CANDIDATE_RESULT: ${{ needs.docker_candidate.result }}
@@ -422,7 +421,6 @@ jobs:
         run: |
           set -euo pipefail
           title="[automation] Upstream synchronization failed"
-          issue_number="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
 
           failed=false
           for result in "$SYNC_RESULT" "$NATIVE_RESULT" "$DOCKER_CANDIDATE_RESULT" "$PROMOTE_RESULT" "$PUBLISH_RESULT" "$RELEASE_RESULT" "$CLEANUP_RESULT"; do
@@ -430,6 +428,27 @@ jobs:
               failed=true
             fi
           done
+
+          {
+            echo "### Synchronization result"
+            echo
+            echo "- Sync: \`$SYNC_RESULT\`"
+            echo "- Native build: \`$NATIVE_RESULT\`"
+            echo "- Docker candidate: \`$DOCKER_CANDIDATE_RESULT\`"
+            echo "- Promote: \`$PROMOTE_RESULT\`"
+            echo "- Publish: \`$PUBLISH_RESULT\`"
+            echo "- Release: \`$RELEASE_RESULT\`"
+            echo "- Cleanup: \`$CLEANUP_RESULT\`"
+            echo "- Run: $RUN_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          repo_has_issues="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.has_issues')"
+          if [[ "$repo_has_issues" != "true" ]]; then
+            echo "Issues are disabled; the workflow summary is the failure report." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          issue_number="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
 
           if [[ "$failed" == "true" ]]; then
             body="Automated synchronization failed.
