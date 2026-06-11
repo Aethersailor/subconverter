@@ -46,6 +46,36 @@ bool isNumeric(const std::string &str) {
     return true;
 }
 
+bool isIntegerString(const std::string &str) {
+    if (str.empty())
+        return false;
+
+    size_t start = str[0] == '-' ? 1 : 0;
+    if (start == str.size())
+        return false;
+
+    for (size_t i = start; i < str.size(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(str[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+YAML::Node yamlScalarFromString(const std::string &value) {
+    YAML::Node node;
+    if (value == "true") {
+        node = true;
+    } else if (value == "false") {
+        node = false;
+    } else if (isIntegerString(value)) {
+        node = to_int(value);
+    } else {
+        node = value;
+    }
+    return node;
+}
+
 
 std::string
 vmessLinkConstruct(const std::string &remarks, const std::string &add, const std::string &port, const std::string &type,
@@ -687,6 +717,17 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                         singleproxy["h2-opts"]["path"] = x.Path;
                         if (!x.Host.empty())
                             singleproxy["h2-opts"]["host"].push_back(x.Host);
+                        break;
+                    case "xhttp"_hash:
+                        singleproxy["network"] = x.TransferProtocol;
+                        singleproxy["xhttp-opts"]["path"] = x.Path;
+                        if (!x.Host.empty())
+                            singleproxy["xhttp-opts"]["host"] = x.Host;
+                        for (const auto &option: x.XHTTPOptions) {
+                            singleproxy["xhttp-opts"][option.first] = yamlScalarFromString(option.second);
+                        }
+                        if (!x.Edge.empty())
+                            singleproxy["xhttp-opts"]["headers"]["Edge"] = x.Edge;
                         break;
                     case "grpc"_hash:
                         singleproxy["network"] = x.TransferProtocol;
@@ -1358,7 +1399,7 @@ std::string proxyToSingle(std::vector<Proxy> &nodes, int types, extra_settings &
                     proxyStr += "&packet-encoding=" + packet_encoding;
                 }
                 if (!alpns.empty()) {
-                    proxyStr += "&alpn=" + alpns[0];
+                    proxyStr += "&alpn=" + urlEncode(join(alpns, ","));
                 }
                 if (!sni.empty()) {
                     proxyStr += "&sni=" + sni;

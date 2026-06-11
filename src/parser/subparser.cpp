@@ -36,6 +36,30 @@ string_array ssr_ciphers = {
 std::map<std::string, std::string> parsedMD5;
 std::string modSSMD5 = "f7653207090ce3389115e9c88541afe0";
 
+const string_array xhttp_option_keys = {
+    "mode",
+    "no-grpc-header",
+    "no-sse-header",
+    "x-padding-bytes",
+    "x-padding-obfs-mode",
+    "x-padding-key",
+    "x-padding-header",
+    "x-padding-placement",
+    "x-padding-method",
+    "uplink-http-method",
+    "session-placement",
+    "session-key",
+    "seq-placement",
+    "seq-key",
+    "uplink-data-placement",
+    "uplink-data-key",
+    "uplink-chunk-size",
+    "sc-max-each-post-bytes",
+    "sc-min-posts-interval-ms",
+    "sc-max-buffered-posts",
+    "sc-stream-up-server-secs"
+};
+
 //remake from speedtestutil
 std::string removeBrackets(const std::string& input) {
     std::string result = input;
@@ -49,6 +73,39 @@ std::string removeBrackets(const std::string& input) {
 
     return result;
 }
+
+void extractRemark(std::string &link, std::string &remark) {
+    string_size pos = link.rfind("#");
+    if (pos != link.npos) {
+        remark = urlDecode(link.substr(pos + 1));
+        link.erase(pos);
+    }
+
+    pos = link.find("#");
+    if (pos != link.npos) {
+        link.erase(pos);
+    }
+}
+
+std::vector<std::string> getUrlAlpnList(const std::string &addition) {
+    std::vector<std::string> result;
+    std::string alpn = urlDecode(getUrlArg(addition, "alpn"));
+    if (alpn.empty())
+        return result;
+
+    auto alpns = split(alpn, ",");
+    for (auto &item: alpns) {
+        item = trim(item);
+        if (!item.empty())
+            result.emplace_back(item);
+    }
+    return result;
+}
+
+std::string getUrlAlpn(const std::string &addition) {
+    return join(getUrlAlpnList(addition), ",");
+}
+
 void commonConstruct(Proxy &node, ProxyType type, const std::string &group, const std::string &remarks,
                      const std::string &server, const std::string &port, const tribool &udp, const tribool &tfo,
                      const tribool &scv, const tribool &tls13, const std::string &underlying_proxy) {
@@ -77,6 +134,7 @@ void vmessConstruct(Proxy &node, const std::string &group, const std::string &re
     node.TransferProtocol = net.empty() ? "tcp" : net;
     node.Edge = edge;
     node.ServerName = sni;
+    node.AlpnList = alpnList;
 
     if (net == "quic") {
         node.QUICSecure = host;
@@ -906,11 +964,8 @@ void explodeTrojan(std::string trojan, Proxy &node) {
     if (startsWith(trojan, "trojan-go://")) {
         trojan.erase(0, 12);
     }
-    string_size pos = trojan.rfind('#');
-    if (pos != std::string::npos) {
-        remark = urlDecode(trojan.substr(pos + 1));
-        trojan.erase(pos);
-    }
+    extractRemark(trojan, remark);
+    string_size pos;
     pos = trojan.find('?');
     if (pos != std::string::npos) {
         addition = trojan.substr(pos + 1);
@@ -956,11 +1011,7 @@ void explodeTrojan(std::string trojan, Proxy &node) {
         remark = server + ":" + port;
     if (group.empty())
         group = TROJAN_DEFAULT_GROUP;
-    std::string alpn = getUrlArg(addition, "alpn");
-    std::vector<std::string> alpnList;
-    if (!alpn.empty()) {
-        alpnList.push_back(alpn);
-    }
+    std::vector<std::string> alpnList = getUrlAlpnList(addition);
     trojanConstruct(node, group, remark, server, port, psk, network, host, path, fp, sni, alpnList, true, tribool(),
                     tfo, scv);
 }
@@ -1031,7 +1082,7 @@ void explodeQuan(const std::string &quan, Proxy &node) {
 
         //read link
         for (uint32_t i = 6; i < configs.size(); i++) {
-            vArray = split(configs[i], "=");
+            vArray = split_first(configs[i], "=");
             if (vArray.size() < 2)
                 continue;
             itemName = trim(vArray[0]);
@@ -1462,6 +1513,23 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
                         singleproxy["h2-opts"]["host"][0] >>= host;
                         edge.clear();
                         break;
+                    case "xhttp"_hash:
+                        path = singleproxy["xhttp-opts"]["path"].IsDefined()
+                                   ? safe_as<std::string>(singleproxy["xhttp-opts"]["path"])
+                                   : "/";
+                        singleproxy["xhttp-opts"]["host"] >>= host;
+                        if (host.empty()) {
+                            singleproxy["xhttp-opts"]["headers"]["Host"] >>= host;
+                        }
+                        singleproxy["xhttp-opts"]["headers"]["Edge"] >>= edge;
+                        if (singleproxy["xhttp-opts"].IsMap()) {
+                            for (const auto &key: xhttp_option_keys) {
+                                if (singleproxy["xhttp-opts"][key].IsScalar()) {
+                                    node.XHTTPOptions[key] = safe_as<std::string>(singleproxy["xhttp-opts"][key]);
+                                }
+                            }
+                        }
+                        break;
                     case "grpc"_hash:
                         singleproxy["servername"] >>= host;
                         singleproxy["grpc-opts"]["grpc-service-name"] >>= path;
@@ -1618,11 +1686,7 @@ void explodeStdVMess(std::string vmess, Proxy &node) {
     vmess = vmess.substr(8);
     string_size pos;
 
-    pos = vmess.rfind('#');
-    if (pos != std::string::npos) {
-        remarks = urlDecode(vmess.substr(pos + 1));
-        vmess.erase(pos);
-    }
+    extractRemark(vmess, remarks);
     const std::string stdvmess_matcher =
             R"(^([a-z]+)(?:\+([a-z]+))?:([\da-f]{4}(?:[\da-f]{4}-){4}[\da-f]{12})-(\d+)@(.+):(\d+)(?:\/?\?(.*))?$)";
     if (regGetMatch(vmess, stdvmess_matcher, 8, 0, &net, &tls, &id, &aid, &add, &port, &addition))
@@ -1649,11 +1713,7 @@ void explodeStdVMess(std::string vmess, Proxy &node) {
 
     if (remarks.empty())
         remarks = add + ":" + port;
-    std::string alpn = getUrlArg(addition, "alpn");
-    std::vector<std::string> alpnList;
-    if (!alpn.empty()) {
-        alpnList.push_back(alpn);
-    }
+    std::vector<std::string> alpnList = getUrlAlpnList(addition);
     vmessConstruct(node, V2RAY_DEFAULT_GROUP, remarks, add, port, type, id, aid, net, "auto", path, host, "", tls, "",
                    alpnList);
 }
@@ -1665,11 +1725,7 @@ void explodeStdHysteria(std::string hysteria, Proxy &node) {
     hysteria = hysteria.substr(11);
     string_size pos;
 
-    pos = hysteria.rfind("#");
-    if (pos != hysteria.npos) {
-        remarks = urlDecode(hysteria.substr(pos + 1));
-        hysteria.erase(pos);
-    }
+    extractRemark(hysteria, remarks);
     const std::string stdhysteria_matcher = R"(^(.*)[:](\d+)[?](.*)$)";
     if (regGetMatch(hysteria, stdhysteria_matcher, 4, 0, &add, &port, &addition))
         return;
@@ -1680,16 +1736,12 @@ void explodeStdHysteria(std::string hysteria, Proxy &node) {
     insecure = getUrlArg(addition, "insecure");
     up = getUrlArg(addition, "upmbps");
     down = getUrlArg(addition, "downmbps");
-    alpn = getUrlArg(addition, "alpn");
+    alpn = getUrlAlpn(addition);
     obfsParam = getUrlArg(addition, "obfsParam");
     sni = getUrlArg(addition, "peer");
 
     if (remarks.empty())
         remarks = add + ":" + port;
-    std::vector<std::string> alpnList;
-    if (!alpn.empty()) {
-        alpnList.push_back(alpn);
-    }
     hysteriaConstruct(node, HYSTERIA_DEFAULT_GROUP, remarks, add, port, type, auth, auth_str, host, up, down, alpn,
                       obfsParam,
                       insecure, "", sni);
@@ -1705,11 +1757,7 @@ void explodeStdMieru(std::string mieru, Proxy &node) {
     string_size pos;
 
     // 提取 remarks
-    pos = mieru.rfind("#");
-    if (pos != mieru.npos) {
-        remarks = urlDecode(mieru.substr(pos + 1));
-        mieru.erase(pos);
-    }
+    extractRemark(mieru, remarks);
 
     // 提取参数
     pos = mieru.rfind("?");
@@ -1748,11 +1796,7 @@ void explodeStdHysteria2(std::string hysteria2, Proxy &node) {
     hysteria2 = hysteria2.substr(12);
     string_size pos;
 
-    pos = hysteria2.rfind("#");
-    if (pos != hysteria2.npos) {
-        remarks = urlDecode(hysteria2.substr(pos + 1));
-        hysteria2.erase(pos);
-    }
+    extractRemark(hysteria2, remarks);
 
     pos = hysteria2.rfind("?");
     if (pos != hysteria2.npos) {
@@ -1778,7 +1822,7 @@ void explodeStdHysteria2(std::string hysteria2, Proxy &node) {
     scv = getUrlArg(addition, "insecure");
     up = getUrlArg(addition, "up");
     down = getUrlArg(addition, "down");
-    alpn = getUrlArg(addition, "alpn");
+    alpn = getUrlAlpn(addition);
     obfsParam = getUrlArg(addition, "obfs");
     obfsPassword = getUrlArg(addition, "obfs-password");
     host = getUrlArg(addition, "sni");
@@ -1799,11 +1843,7 @@ void explodeStdVless(std::string vless, Proxy &node) {
     vless = vless.substr(8);
     string_size pos;
 
-    pos = vless.rfind("#");
-    if (pos != vless.npos) {
-        remarks = urlDecode(vless.substr(pos + 1));
-        vless.erase(pos);
-    }
+    extractRemark(vless, remarks);
     const std::string stdvless_matcher =
             R"(^([\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12})@\[?([\d\-a-zA-Z:.]+)\]?:(\d+)(?:\/?\?(.*))?$)";
     if (regGetMatch(vless, stdvless_matcher, 5, 0, &id, &add, &port, &addition))
@@ -1817,21 +1857,11 @@ void explodeStdVless(std::string vless, Proxy &node) {
     encryption = getUrlArg(addition, "encryption");
     fp = getUrlArg(addition, "fp");
     std::string packet_encoding = getUrlArg(addition, "packet-encoding");
-    std::string alpn = getUrlArg(addition, "alpn");
-    std::vector<std::string> alpnList;
-    if (!alpn.empty()) {
-        alpnList.push_back(alpn);
-    }
+    std::vector<std::string> alpnList = getUrlAlpnList(addition);
     switch (hash_(net)) {
         case "tcp"_hash:
         case "ws"_hash:
         case "h2"_hash:
-            type = getUrlArg(addition, "headerType");
-            host = getUrlArg(addition, strFind(addition, "sni") ? "sni" : "host");
-            path = getUrlArg(addition, "path");
-            break;
-        case "xhttp"_hash: // 新增对 type=xhttp 的支持
-            net = "h2"; // 视为 h2/http2 传输
             type = getUrlArg(addition, "headerType");
             host = getUrlArg(addition, strFind(addition, "sni") ? "sni" : "host");
             path = getUrlArg(addition, "path");
@@ -1846,10 +1876,23 @@ void explodeStdVless(std::string vless, Proxy &node) {
             host = getUrlArg(addition, strFind(addition, "sni") ? "sni" : "quicSecurity");
             path = getUrlArg(addition, "key");
             break;
+        case "xhttp"_hash:
+            type = getUrlArg(addition, "headerType");
+            host = getUrlArg(addition, strFind(addition, "sni") ? "sni" : "host");
+            path = getUrlArg(addition, "path");
+            for (const auto &key: xhttp_option_keys) {
+                std::string value = getUrlArg(addition, key);
+                if (value.empty()) {
+                    value = getUrlArg(addition, replaceAllDistinct(key, "-", "_"));
+                }
+                if (!value.empty()) {
+                    node.XHTTPOptions[key] = value;
+                }
+            }
+            break;
         default:
             return;
     }
-
     if (remarks.empty())
         remarks = add + ":" + port;
     sni = getUrlArg(addition, "sni");
@@ -1893,11 +1936,7 @@ void explodeShadowrocket(std::string rocket, Proxy &node) {
 
     if (remarks.empty())
         remarks = add + ":" + port;
-    std::string alpn = getUrlArg(addition, "alpn");
-    std::vector<std::string> alpnList;
-    if (!alpn.empty()) {
-        alpnList.push_back(alpn);
-    }
+    std::vector<std::string> alpnList = getUrlAlpnList(addition);
     vmessConstruct(node, V2RAY_DEFAULT_GROUP, remarks, add, port, type, id, aid, net, cipher, path, host, "", tls, "",
                    alpnList);
 }
@@ -1933,11 +1972,7 @@ void explodeKitsunebi(std::string kit, Proxy &node) {
 
     if (remarks.empty())
         remarks = add + ":" + port;
-    std::string alpn = getUrlArg(addition, "alpn");
-    std::vector<std::string> alpnList;
-    if (!alpn.empty()) {
-        alpnList.push_back(alpn);
-    }
+    std::vector<std::string> alpnList = getUrlAlpnList(addition);
     vmessConstruct(node, V2RAY_DEFAULT_GROUP, remarks, add, port, type, id, aid, net, cipher, path, host, "", tls, "",
                    alpnList);
 }
@@ -2054,7 +2089,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                 password = trim(configs[4]);
 
                 for (i = 6; i < configs.size(); i++) {
-                    vArray = split(configs[i], "=");
+                    vArray = split_first(configs[i], "=");
                     if (vArray.size() < 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2073,10 +2108,17 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                         case "tfo"_hash:
                             tfo = itemVal;
                             break;
+                        case "shadow-tls-sni"_hash:
+                        case "shadow-tls-password"_hash:
+                        case "shadow-tls-version"_hash:
+                            port = "0";
+                            break;
                         default:
                             continue;
                     }
                 }
+                if (port == "0")
+                    continue;
                 if (!plugin.empty()) {
                     pluginopts = "obfs=" + pluginopts_mode;
                     pluginopts += pluginopts_host.empty() ? "" : ";obfs-host=" + pluginopts_host;
@@ -2095,7 +2137,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                     continue;
 
                 for (i = 3; i < configs.size(); i++) {
-                    vArray = split(configs[i], "=");
+                    vArray = split_first(configs[i], "=");
                     if (vArray.size() < 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2120,10 +2162,17 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                         case "tfo"_hash:
                             tfo = itemVal;
                             break;
+                        case "shadow-tls-sni"_hash:
+                        case "shadow-tls-password"_hash:
+                        case "shadow-tls-version"_hash:
+                            port = "0";
+                            break;
                         default:
                             continue;
                     }
                 }
+                if (port == "0")
+                    continue;
                 if (!plugin.empty()) {
                     pluginopts = "obfs=" + pluginopts_mode;
                     pluginopts += pluginopts_host.empty() ? "" : ";obfs-host=" + pluginopts_host;
@@ -2142,7 +2191,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                     password = trim(configs[4]);
                 }
                 for (i = 5; i < configs.size(); i++) {
-                    vArray = split(configs[i], "=");
+                    vArray = split_first(configs[i], "=");
                     if (vArray.size() < 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2172,7 +2221,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                 method = "auto";
 
                 for (i = 3; i < configs.size(); i++) {
-                    vArray = split(configs[i], "=");
+                    vArray = split_first(configs[i], "=");
                     if (vArray.size() != 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2233,7 +2282,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                 if (port == "0")
                     continue;
                 for (i = 3; i < configs.size(); i++) {
-                    vArray = split(configs[i], "=");
+                    vArray = split_first(configs[i], "=");
                     if (vArray.size() < 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2261,7 +2310,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                     continue;
 
                 for (i = 3; i < configs.size(); i++) {
-                    vArray = split(configs[i], "=");
+                    vArray = split_first(configs[i], "=");
                     if (vArray.size() != 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2304,7 +2353,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                     continue;
 
                 for (i = 3; i < configs.size(); i++) {
-                    vArray = split(configs[i], "=");
+                    vArray = split_first(configs[i], "=");
                     if (vArray.size() != 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2341,7 +2390,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                 break;
             case "wireguard"_hash:
                 for (i = 1; i < configs.size(); i++) {
-                    vArray = split(trim(configs[i]), "=");
+                    vArray = split_first(trim(configs[i]), "=");
                     if (vArray.size() != 2)
                         continue;
                     itemName = trim(vArray[0]);
@@ -2395,6 +2444,43 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                                    mtu, keepalive, test_url, "", udp, "");
                 parsePeers(node, peer);
                 break;
+            case "anytls"_hash: //Surge style anytls proxy
+                server = trim(configs[1]);
+                port = trim(configs[2]);
+                if (port == "0")
+                    continue;
+
+                for (i = 3; i < configs.size(); i++) {
+                    vArray = split_first(configs[i], "=");
+                    if (vArray.size() != 2)
+                        continue;
+                    itemName = trim(vArray[0]);
+                    itemVal = trim(vArray[1]);
+                    switch (hash_(itemName)) {
+                        case "password"_hash:
+                            password = itemVal;
+                            break;
+                        case "sni"_hash:
+                            sni = itemVal;
+                            break;
+                        case "skip-cert-verify"_hash:
+                            scv = itemVal;
+                            break;
+                        case "fingerprint"_hash:
+                            fp = itemVal;
+                            break;
+                        case "tls13"_hash:
+                            tls13 = itemVal;
+                            break;
+                        default:
+                            continue;
+                    }
+                }
+
+                anyTlSConstruct(node, ANYTLS_DEFAULT_GROUP, remarks, port, password, server,
+                                std::vector<std::string>{}, fp, sni,
+                                udp, tribool(), scv, tribool(), "", 30, 30, 0);
+                break;
             default:
                 switch (hash_(remarks)) {
                     case "shadowsocks"_hash: //quantumult x style ss/ssr link
@@ -2404,7 +2490,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                             continue;
 
                         for (i = 1; i < configs.size(); i++) {
-                            vArray = split(trim(configs[i]), "=");
+                            vArray = split_first(trim(configs[i]), "=");
                             if (vArray.size() != 2)
                                 continue;
                             itemName = trim(vArray[0]);
@@ -2499,7 +2585,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                         net = "tcp";
 
                         for (i = 1; i < configs.size(); i++) {
-                            vArray = split(trim(configs[i]), "=");
+                            vArray = split_first(trim(configs[i]), "=");
                             if (vArray.size() != 2)
                                 continue;
                             itemName = trim(vArray[0]);
@@ -2566,7 +2652,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                         net = "tcp";
 
                         for (i = 1; i < configs.size(); i++) {
-                            vArray = split(trim(configs[i]), "=");
+                            vArray = split_first(trim(configs[i]), "=");
                             if (vArray.size() != 2)
                                 continue;
                             itemName = trim(vArray[0]);
@@ -2632,7 +2718,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                             continue;
 
                         for (i = 1; i < configs.size(); i++) {
-                            vArray = split(trim(configs[i]), "=");
+                            vArray = split_first(trim(configs[i]), "=");
                             if (vArray.size() != 2)
                                 continue;
                             itemName = trim(vArray[0]);
@@ -2684,7 +2770,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                             continue;
 
                         for (i = 1; i < configs.size(); i++) {
-                            vArray = split(trim(configs[i]), "=");
+                            vArray = split_first(trim(configs[i]), "=");
                             if (vArray.size() != 2)
                                 continue;
                             itemName = trim(vArray[0]);
@@ -3148,11 +3234,7 @@ void explodeTuic(const std::string &tuic, Proxy &node) {
     std::string link = tuic.substr(7);
     string_size pos;
 
-    pos = link.rfind("#");
-    if (pos != std::string::npos) {
-        remarks = urlDecode(link.substr(pos + 1));
-        link.erase(pos);
-    }
+    extractRemark(link, remarks);
 
     pos = link.rfind("?");
     if (pos != std::string::npos) {
@@ -3191,7 +3273,7 @@ void explodeTuic(const std::string &tuic, Proxy &node) {
         add = add.substr(1, add.length() - 2);
 
     scv = getUrlArg(addition, "insecure");
-    alpn = getUrlArg(addition, "alpn");
+    alpn = getUrlAlpn(addition);
     sni = getUrlArg(addition, "sni");
     congestion_control = getUrlArg(addition, "congestion_control");
     if (remarks.empty())
@@ -3211,11 +3293,7 @@ void explodeAnyTLS(std::string anytls, Proxy &node) {
     anytls = anytls.substr(9);
     string_size pos;
 
-    pos = anytls.rfind("#");
-    if (pos != anytls.npos) {
-        remarks = urlDecode(anytls.substr(pos + 1));
-        anytls.erase(pos);
-    }
+    extractRemark(anytls, remarks);
 
     pos = anytls.rfind("?");
     if (pos != anytls.npos) {
@@ -3241,14 +3319,7 @@ void explodeAnyTLS(std::string anytls, Proxy &node) {
     if (remarks.empty())
         remarks = add + ":" + port;
 
-    std::string alpn = getUrlArg(addition, "alpn");
-    if (!alpn.empty()) {
-        auto alpns = split(alpn, ",");
-        for (auto &item : alpns) {
-            if (!item.empty())
-                alpnList.emplace_back(item);
-        }
-    }
+    alpnList = getUrlAlpnList(addition);
 
     fp = getUrlArg(addition, "fp");
     if (fp.empty())
