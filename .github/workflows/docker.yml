@@ -289,7 +289,11 @@ jobs:
 
   merge:
     needs: [prepare, build]
-    if: needs.prepare.outputs.should_push == 'true'
+    if: >-
+      always() &&
+      needs.prepare.result == 'success' &&
+      needs.build.result == 'success' &&
+      needs.prepare.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -346,3 +350,38 @@ jobs:
           docker buildx imagetools create "${tags[@]}" \
             $(printf "$IMAGE@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  verify:
+    needs: [prepare, smoke, build, merge]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify requested work completed
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          MERGE_RESULT: ${{ needs.merge.result }}
+          RUN_SMOKE: ${{ needs.prepare.outputs.run_smoke }}
+          SHOULD_PUSH: ${{ needs.prepare.outputs.should_push }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PREPARE_RESULT" != "success" ]]; then
+            echo "Metadata preparation failed: $PREPARE_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$RUN_SMOKE" == "true" && "$SMOKE_RESULT" != "success" ]]; then
+            echo "Smoke test did not succeed: $SMOKE_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$SHOULD_PUSH" == "true" ]]; then
+            if [[ "$BUILD_RESULT" != "success" ]]; then
+              echo "Image build did not succeed: $BUILD_RESULT" >&2
+              exit 1
+            fi
+            if [[ "$MERGE_RESULT" != "success" ]]; then
+              echo "Manifest publication did not succeed: $MERGE_RESULT" >&2
+              exit 1
+            fi
+          fi

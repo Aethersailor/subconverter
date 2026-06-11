@@ -85,6 +85,8 @@ class ProjectCustomizationTests(unittest.TestCase):
             "steps.ghcr_image.outputs.digest",
             "image-digest-dockerhub-*",
             "image-digest-ghcr-*",
+            "needs.build.result == 'success'",
+            "Manifest publication did not succeed",
         ):
             self.assertIn(value, workflow)
 
