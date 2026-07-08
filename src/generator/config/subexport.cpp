@@ -487,8 +487,6 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                 }
                 break;
             case ProxyType::Snell:
-                if (x.SnellVersion >= 4)
-                    continue;
                 singleproxy["type"] = "snell";
                 singleproxy["psk"] = x.Password;
                 if (x.SnellVersion != 0)
@@ -742,9 +740,8 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                 continue;
         }
 
-        // UDP is not supported yet in clash using snell
-        // sees in https://dreamacro.github.io/clash/configuration/outbound.html#snell
-        if (udp && x.Type != ProxyType::Snell && x.Type != ProxyType::TUIC)
+        // Snell UDP is available in mihomo-compatible Snell v3+ nodes.
+        if (udp && (x.Type != ProxyType::Snell || x.SnellVersion >= 3) && x.Type != ProxyType::TUIC)
             singleproxy["udp"] = true;
         if (!clashR && !x.UnderlyingProxy.empty())
             singleproxy["dialer-proxy"] = x.UnderlyingProxy;
@@ -890,7 +887,7 @@ std::string proxyToClash(std::vector<Proxy> &nodes, const std::string &base_conf
     proxyToClash(nodes, yamlnode, extra_proxy_group, clashR, ext);
 
     if (ext.nodelist)
-        return YAML::Dump(yamlnode);
+        return formatterShortId(YAML::Dump(yamlnode));
 
     /*
     if(ext.enable_rule_generator)
@@ -899,7 +896,7 @@ std::string proxyToClash(std::vector<Proxy> &nodes, const std::string &base_conf
     return YAML::Dump(yamlnode);
     */
     if (!ext.enable_rule_generator)
-        return YAML::Dump(yamlnode);
+        return formatterShortId(YAML::Dump(yamlnode));
 
     if (!ext.managed_config_prefix.empty() || ext.clash_script) {
         if (yamlnode["mode"].IsDefined()) {
@@ -911,7 +908,7 @@ std::string proxyToClash(std::vector<Proxy> &nodes, const std::string &base_conf
 
         renderClashScript(yamlnode, ruleset_content_array, ext.managed_config_prefix, ext.clash_script,
                           ext.overwrite_original_rules, ext.clash_classical_ruleset);
-        return YAML::Dump(yamlnode);
+        return formatterShortId(YAML::Dump(yamlnode));
     }
 
     std::string output_content = rulesetToClashStr(yamlnode, ruleset_content_array, ext.overwrite_original_rules,

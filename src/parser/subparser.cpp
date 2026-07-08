@@ -60,6 +60,66 @@ const string_array xhttp_option_keys = {
     "sc-stream-up-server-secs"
 };
 
+bool isXHTTPOptionKey(const std::string &key) {
+    return std::find(xhttp_option_keys.begin(), xhttp_option_keys.end(), key) != xhttp_option_keys.end();
+}
+
+std::string normalizeXHTTPOptionKey(std::string key) {
+    std::string result;
+    for (size_t i = 0; i < key.size(); i++) {
+        unsigned char current = static_cast<unsigned char>(key[i]);
+        if (key[i] == '_') {
+            if (!result.empty() && result.back() != '-')
+                result += '-';
+        } else if (std::isupper(current)) {
+            bool prev_is_lower_or_digit = i > 0 &&
+                                          (std::islower(static_cast<unsigned char>(key[i - 1])) ||
+                                           std::isdigit(static_cast<unsigned char>(key[i - 1])));
+            bool acronym_ends = i > 0 && i + 1 < key.size() &&
+                                std::isupper(static_cast<unsigned char>(key[i - 1])) &&
+                                std::islower(static_cast<unsigned char>(key[i + 1]));
+            if (!result.empty() && result.back() != '-' && (prev_is_lower_or_digit || acronym_ends))
+                result += '-';
+            result += static_cast<char>(std::tolower(current));
+        } else {
+            result += key[i];
+        }
+    }
+    return result;
+}
+
+std::string jsonScalarToString(const rapidjson::Value &value) {
+    if (value.IsString())
+        return value.GetString();
+    if (value.IsBool())
+        return value.GetBool() ? "true" : "false";
+    if (value.IsInt64())
+        return std::to_string(value.GetInt64());
+    if (value.IsUint64())
+        return std::to_string(value.GetUint64());
+    if (value.IsDouble())
+        return std::to_string(value.GetDouble());
+    return "";
+}
+
+void readXHTTPExtraOptions(const std::string &addition, Proxy &node) {
+    std::string extra = urlDecode(getUrlArg(addition, "extra"));
+    if (extra.empty())
+        return;
+
+    rapidjson::Document json;
+    json.Parse(extra.data());
+    if (json.HasParseError() || !json.IsObject())
+        return;
+
+    for (auto item = json.MemberBegin(); item != json.MemberEnd(); ++item) {
+        std::string key = normalizeXHTTPOptionKey(item->name.GetString());
+        std::string value = jsonScalarToString(item->value);
+        if (isXHTTPOptionKey(key) && !value.empty())
+            node.XHTTPOptions[key] = value;
+    }
+}
+
 //remake from speedtestutil
 std::string removeBrackets(const std::string& input) {
     std::string result = input;
@@ -326,7 +386,7 @@ void vlessConstruct(Proxy &node, const std::string &group, const std::string &re
         case "grpc"_hash:
             node.Host = host;
             node.GRPCMode = mode.empty() ? "gun" : mode;
-            node.GRPCServiceName = path.empty() ? "/" : urlEncode(urlDecode(trim(path)));
+            node.GRPCServiceName = path.empty() ? "/" : urlDecode(trim(path));
             break;
         case "quic"_hash:
             node.Host = host;
@@ -1880,6 +1940,7 @@ void explodeStdVless(std::string vless, Proxy &node) {
             type = getUrlArg(addition, "headerType");
             host = getUrlArg(addition, strFind(addition, "sni") ? "sni" : "host");
             path = getUrlArg(addition, "path");
+            readXHTTPExtraOptions(addition, node);
             for (const auto &key: xhttp_option_keys) {
                 std::string value = getUrlArg(addition, key);
                 if (value.empty()) {
