@@ -317,6 +317,7 @@ int renderClashScript(YAML::Node &base_rule, std::vector<RulesetContent> &rulese
     string_map keywords, urls, names;
     std::map<std::string, bool> has_domain, has_ipcidr;
     std::map<std::string, int> ruleset_interval, rule_type;
+    string_map ruleset_format;
     string_array rules;
     int index = 0;
 
@@ -365,6 +366,7 @@ int renderClashScript(YAML::Node &base_rule, std::vector<RulesetContent> &rulese
                 urls[rule_name] = "*" + rule_path;
                 rule_type[rule_name] = x.rule_type;
                 ruleset_interval[rule_name] = x.update_interval;
+                ruleset_format[rule_name] = x.rule_format;
                 switch(x.rule_type)
                 {
                 case RULESET_CLASH_IPCIDR:
@@ -394,6 +396,7 @@ int renderClashScript(YAML::Node &base_rule, std::vector<RulesetContent> &rulese
                     urls[rule_name] = rule_path_typed;
                     rule_type[rule_name] = x.rule_type;
                     ruleset_interval[rule_name] = x.update_interval;
+                    ruleset_format[rule_name] = x.rule_format;
                     if(clash_classical_ruleset)
                     {
                         if(!script)
@@ -485,6 +488,7 @@ int renderClashScript(YAML::Node &base_rule, std::vector<RulesetContent> &rulese
         std::string url = urls[x], keyword = keywords[x], name = names[x];
         bool group_has_domain = has_domain[x], group_has_ipcidr = has_ipcidr[x];
         int interval = ruleset_interval[x];
+        std::string format = ruleset_format[x];
 
         if(group_has_domain)
         {
@@ -498,6 +502,8 @@ int renderClashScript(YAML::Node &base_rule, std::vector<RulesetContent> &rulese
             else
                 base_rule["rule-providers"][yaml_key]["url"] = remote_path_prefix + "/getruleset?type=3&url=" + urlSafeBase64Encode(url);
             base_rule["rule-providers"][yaml_key]["path"] = "./providers/" + std::to_string(hash_(url)) + "_domain.yaml";
+            if(!format.empty())
+                base_rule["rule-providers"][yaml_key]["format"] = format;
             if(interval)
                 base_rule["rule-providers"][yaml_key]["interval"] = interval;
         }
@@ -513,6 +519,8 @@ int renderClashScript(YAML::Node &base_rule, std::vector<RulesetContent> &rulese
             else
                 base_rule["rule-providers"][yaml_key]["url"] = remote_path_prefix + "/getruleset?type=4&url=" + urlSafeBase64Encode(url);
             base_rule["rule-providers"][yaml_key]["path"] = "./providers/" + std::to_string(hash_(url)) + "_ipcidr.yaml";
+            if(!format.empty())
+                base_rule["rule-providers"][yaml_key]["format"] = format;
             if(interval)
                 base_rule["rule-providers"][yaml_key]["interval"] = interval;
         }
@@ -526,6 +534,8 @@ int renderClashScript(YAML::Node &base_rule, std::vector<RulesetContent> &rulese
             else
                 base_rule["rule-providers"][yaml_key]["url"] = remote_path_prefix + "/getruleset?type=6&url=" + urlSafeBase64Encode(url);
             base_rule["rule-providers"][yaml_key]["path"] = "./providers/" + std::to_string(hash_(url)) + ".yaml";
+            if(!format.empty())
+                base_rule["rule-providers"][yaml_key]["format"] = format;
             if(interval)
                 base_rule["rule-providers"][yaml_key]["interval"] = interval;
         }

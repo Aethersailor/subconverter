@@ -35,6 +35,7 @@ struct ProxyGroupConfig
     Boolean DisableUdp;
     Boolean Persistent;
     Boolean EvaluateBeforeUse;
+    string_map Extras;
 
     String TypeStr() const
     {

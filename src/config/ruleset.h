@@ -17,10 +17,11 @@ struct RulesetConfig
     String Group;
     //RulesetType Type = RulesetType::SurgeRuleset;
     String Url;
+    String Format;
     Integer Interval = 86400;
     bool operator==(const RulesetConfig &r) const
     {
-        return Group == r.Group && Url == r.Url && Interval == r.Interval;
+        return Group == r.Group && Url == r.Url && Format == r.Format && Interval == r.Interval;
     }
 };
 

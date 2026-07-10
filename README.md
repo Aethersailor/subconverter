@@ -10,8 +10,8 @@
 | --- | --- |
 | 上游分支 | `master` |
 | 上游版本 | `v0.9.9` |
-| 上游提交 | [`76402445`](https://github.com/asdlokj1qpi233/subconverter/commit/764024453606b447df3796e99be5813ad7158095) |
-| 上次成功同步 | `2026-07-08T03:34:44+00:00` |
+| 上游提交 | [`6e94f496`](https://github.com/asdlokj1qpi233/subconverter/commit/6e94f496d1e170282321119214de08e3826fa24f) |
+| 上次成功同步 | `2026-07-10T06:25:11+00:00` |
 | 当前 Mihomo User-Agent | `mihomo/1.19.28` |
 | User-Agent 来源 | [MetaCubeX/mihomo 最新 Release](https://github.com/MetaCubeX/mihomo/releases/latest) |
 | 本项目版本后缀 | `af` |

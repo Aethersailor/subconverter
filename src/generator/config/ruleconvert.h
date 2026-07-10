@@ -24,6 +24,7 @@ struct RulesetContent
     std::string rule_group;
     std::string rule_path;
     std::string rule_path_typed;
+    std::string rule_format;
     int rule_type = RULESET_SURGE;
     std::shared_future<std::string> rule_content;
     int update_interval = 0;
