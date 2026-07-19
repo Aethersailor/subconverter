@@ -5,8 +5,8 @@
   "upstream_version": "v0.9.9",
   "upstream_commit": "6e94f496d1e170282321119214de08e3826fa24f",
   "upstream_synced_at": "2026-07-10T06:25:11+00:00",
-  "user_agent": "mihomo/1.19.28",
+  "user_agent": "mihomo/1.19.29",
   "user_agent_source": "MetaCubeX/mihomo",
-  "user_agent_updated_at": "2026-07-08T03:34:44+00:00",
+  "user_agent_updated_at": "2026-07-19T05:32:40+00:00",
   "edition": "af"
 }
