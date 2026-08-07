@@ -25,10 +25,22 @@ on:
     paths-ignore:
       - README.md
       - .github/templates/README.md.tmpl
+      - .github/workflows/readme.yml
+      - docs/**
+      - mihomo-fetcher/PROTOCOL.md
+      - scripts/MIHOMO_FETCHER_PACKAGING.md
+      - scripts/mihomo_conformance/README.md
+      - tests/test_readme.py
   pull_request:
     paths-ignore:
       - README.md
       - .github/templates/README.md.tmpl
+      - .github/workflows/readme.yml
+      - docs/**
+      - mihomo-fetcher/PROTOCOL.md
+      - scripts/MIHOMO_FETCHER_PACKAGING.md
+      - scripts/mihomo_conformance/README.md
+      - tests/test_readme.py
 
 permissions:
   contents: read
