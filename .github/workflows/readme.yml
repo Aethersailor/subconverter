@@ -1,0 +1,58 @@
+name: Verify Generated Documentation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - README.md
+      - .github/templates/README.md.tmpl
+      - .github/project-metadata.json
+      - .github/source-lock.json
+      - .github/workflows/readme.yml
+      - docs/**
+      - mihomo-fetcher/PROTOCOL.md
+      - scripts/MIHOMO_FETCHER_PACKAGING.md
+      - scripts/mihomo_conformance/README.md
+      - scripts/project_metadata.py
+      - tests/test_project_customization.py
+      - tests/test_readme.py
+  pull_request:
+    paths:
+      - README.md
+      - .github/templates/README.md.tmpl
+      - .github/project-metadata.json
+      - .github/source-lock.json
+      - .github/workflows/readme.yml
+      - docs/**
+      - mihomo-fetcher/PROTOCOL.md
+      - scripts/MIHOMO_FETCHER_PACKAGING.md
+      - scripts/mihomo_conformance/README.md
+      - scripts/project_metadata.py
+      - tests/test_project_customization.py
+      - tests/test_readme.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Verify generated README
+        run: python3 scripts/project_metadata.py render --check
+
+      - name: Run README contract tests
+        run: |
+          python3 -m unittest discover -s tests -p 'test_project_customization.py' -v
+          python3 -m unittest discover -s tests -p 'test_readme.py' -v
+
+      - name: Check whitespace
+        run: git diff --check
