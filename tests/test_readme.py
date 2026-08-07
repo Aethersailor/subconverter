@@ -15,6 +15,15 @@ class ReadmeContractTests(unittest.TestCase):
 
     def test_reader_journey_prioritizes_deployment_and_usage(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        introduction = readme[: readme.index("## 快速部署")]
+        for value in (
+            "最大限度减少原版 subconverter",
+            "向订阅服务商暴露的请求特征",
+            "尽可能对齐 Mihomo 内核的 Provider 访问特征",
+            "订阅转换后端访问远程订阅服务商",
+            "https://github.com/Aethersailor/SubConverter-Extended",
+        ):
+            self.assertIn(value, introduction)
         sections = (
             "## 快速部署",
             "## 开始使用",

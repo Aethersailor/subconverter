@@ -10,12 +10,12 @@
 [![Docker Build](https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml/badge.svg?branch=master)](https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml)
 [![Release](https://img.shields.io/github/v/release/Aethersailor/subconverter)](https://github.com/Aethersailor/subconverter/releases)
 
-一个可以直接部署的 subconverter，保留上游的订阅转换能力和使用方式，并专门优化了**访问机场原始订阅**这一段请求：严格模拟当前已验证的 Mihomo 最新稳定版 Provider 获取行为，最大限度减少机场服务商识别出 subconverter 的特征。
+本项目旨在最大限度减少原版 subconverter 主动拉取远程订阅时，向订阅服务商暴露的请求特征。在保留原有转换接口和使用方式的基础上，它将 subconverter 访问订阅地址时可被服务商观察到的 HTTP/TLS 等行为，尽可能对齐 Mihomo 内核的 Provider 访问特征，从而尽可能避免被识别为 subconverter 并遭到屏蔽。
 
-适合希望自建订阅转换服务，同时不想让机场轻易从请求特征判断出“这是 subconverter”的用户。
+它适合仍需由服务端完成传统订阅拉取和转换、又希望降低请求特征暴露的用户。已经在使用普通 subconverter 的部署通常只需替换镜像，无需改变订阅链接和客户端用法。
 
-> [!NOTE]
-> 这个版本不会改变你的订阅转换链接和客户端用法。已经在使用普通 subconverter 的用户，通常只需要替换镜像。
+> [!TIP]
+> 如果希望从架构上完全避免**订阅转换后端访问远程订阅服务商**，建议使用 [Aethersailor/SubConverter-Extended](https://github.com/Aethersailor/SubConverter-Extended)。它会生成 `proxy-provider`，由用户客户端中的 Mihomo 内核直接拉取订阅，转换后端不再连接远程订阅服务器。
 
 ## 快速部署
 
