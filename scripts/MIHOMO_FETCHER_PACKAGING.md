@@ -40,8 +40,10 @@ export SUBCONVERTER_MIHOMO_FETCHER_MANIFEST=/path/to/subconverter-mihomo-fetcher
 ```
 
 Use `subconverter-mihomo-fetcher.exe` for Windows. `PYTHON_BIN` may select a
-specific Python 3 executable. `SUBCONVERTER_MIHOMO_FETCHER_PLATFORM` is an
-optional assertion; when present it must match the release host.
+specific Python 3 executable. `SUBCONVERTER_MIHOMO_FETCHER_PLATFORM` identifies
+the exact package target and takes precedence over the host kernel architecture,
+which is required for 32-bit and QEMU builds. The installer still verifies that
+the manifest and executable architecture exactly match that target.
 
 The release scripts install the verified binary beside `subconverter` and add
 the manifest to the same package. Missing files, a stale source lock, the wrong

@@ -95,9 +95,9 @@
       "tree": "2487680d2def055568f3b50fcc61f931d70f6fa6"
     }
   },
-  "pair_id": "sha256:eb89d0bb0790368c4e23d2a1312bd59ed4ab628bb6f06c526de0a6228f58333f",
+  "pair_id": "sha256:44fb36d28ffb0d4c228f23b51e038ee592a44fb66ac5a6058b41703f478a3444",
   "project": {
-    "helper_overlay_sha256": "sha256:8e44c1b03489989b59a9eb5fd72898071dab2b17ca3bdb957313531664596656",
+    "helper_overlay_sha256": "sha256:c81a787bd67db7a5eb8cc081bc4d8b7d0c9de02c70058a5b13b78416f5bd806d",
     "helper_protocol": 1,
     "parity_contract": "mihomo-provider-fetch-v1"
   },

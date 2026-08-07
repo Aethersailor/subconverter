@@ -14,6 +14,10 @@ SPEC.loader.exec_module(BUILDER)
 
 
 class MihomoFetcherBuildTests(unittest.TestCase):
+    def test_helper_overlay_line_endings_are_pinned_across_platforms(self):
+        attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("*.go text eol=lf", attributes.splitlines())
+
     def test_overlay_digest_matches_source_lock(self):
         lock, version, commit, digest = BUILDER.load_lock()
         self.assertEqual(version, lock["mihomo"]["tag"])

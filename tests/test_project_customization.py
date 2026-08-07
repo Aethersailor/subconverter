@@ -103,6 +103,12 @@ class ProjectCustomizationTests(unittest.TestCase):
             workflow,
         )
 
+    def test_sync_preserves_cross_platform_helper_line_endings(self):
+        workflow = (ROOT / ".github" / "workflows" / "auto_sync.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("            .gitattributes\n", workflow)
+
     def test_windows_build_patches_pinned_yaml_cpp_for_current_compilers(self):
         script = (ROOT / "scripts" / "build.windows.release.sh").read_text(
             encoding="utf-8"

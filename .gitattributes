@@ -1,0 +1,4 @@
+# The helper overlay is hashed byte-for-byte and built on Linux, macOS, and
+# Windows. Pin Go sources to LF so checkout conversion cannot change its locked
+# identity or the compiled contents on a single platform.
+*.go text eol=lf

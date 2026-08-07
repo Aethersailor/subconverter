@@ -332,10 +332,13 @@ jobs:
             -p 127.0.0.1:25500:25500 \
             "$IMAGE"
           trap 'docker stop subconverter-smoke >/dev/null 2>&1 || true' EXIT
-          python3 scripts/test_outbound_headers.py \
+          if ! python3 scripts/test_outbound_headers.py \
             --service-url http://127.0.0.1:25500 \
             --echo-host host.docker.internal \
-            --expected-version "$EXPECTED_VERSION"
+            --expected-version "$EXPECTED_VERSION"; then
+            docker logs subconverter-smoke >&2 || true
+            exit 1
+          fi
 
   build:
     needs: [prepare, smoke]

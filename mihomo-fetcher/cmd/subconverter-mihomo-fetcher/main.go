@@ -463,6 +463,18 @@ func executeFetch(request fetchRequest) fetchResponse {
 	return response
 }
 
+func initializeProviderTransport(etagSupport bool) string {
+	defaultUA := "clash.meta/" + C.Version
+	mihomoHTTP.SetUA(defaultUA)
+	resource.SetETag(etagSupport)
+	// Mihomo's default DNS configuration enables use-system-hosts even when
+	// its DNS server is disabled. The standalone helper does not run the full
+	// config executor, so mirror that default explicitly before DIRECT dials.
+	resolver.UseSystemHosts = true
+	inner.New(providerTunnel{})
+	return defaultUA
+}
+
 func run() error {
 	// stdout is the framed IPC transport. Mihomo's package logger defaults to
 	// stdout, so suppress it before any cache/resource code can emit a record.
@@ -482,10 +494,7 @@ func run() error {
 	}
 
 	C.SetHomeDir(dataDir)
-	defaultUA := "clash.meta/" + C.Version
-	mihomoHTTP.SetUA(defaultUA)
-	resource.SetETag(true)
-	inner.New(providerTunnel{})
+	defaultUA := initializeProviderTransport(true)
 	cache := cachefile.Cache()
 	if cache == nil || cache.DB == nil {
 		return errors.New("initialize strict ETag cache")

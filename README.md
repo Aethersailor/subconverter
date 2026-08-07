@@ -14,7 +14,7 @@
 | 上游源码同步时间 | `2026-07-10T06:25:11+00:00` |
 | 锁定的 Mihomo Release | [`v1.19.29`](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.29) |
 | 锁定的 Mihomo 提交 | [`e26714a1`](https://github.com/MetaCubeX/mihomo/commit/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb) |
-| 源码配对 ID | `sha256:eb89d0bb0790368c4e23d2a1312bd59ed4ab628bb6f06c526de0a6228f58333f` |
+| 源码配对 ID | `sha256:44fb36d28ffb0d4c228f23b51e038ee592a44fb66ac5a6058b41703f478a3444` |
 | 模仿契约 | `mihomo-provider-fetch-v1`（helper protocol `1`） |
 | 本项目版本后缀 | `af` |
 

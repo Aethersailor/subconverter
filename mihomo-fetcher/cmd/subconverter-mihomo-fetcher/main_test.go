@@ -12,15 +12,21 @@ import (
 
 	mihomoHTTP "github.com/metacubex/mihomo/component/http"
 	"github.com/metacubex/mihomo/component/profile/cachefile"
+	"github.com/metacubex/mihomo/component/resolver"
 	"github.com/metacubex/mihomo/component/resource"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/listener/inner"
 )
 
 func initializeTestTransport() {
-	mihomoHTTP.SetUA("clash.meta/" + C.Version)
-	resource.SetETag(false)
-	inner.New(providerTunnel{})
+	initializeProviderTransport(false)
+}
+
+func TestInitializeProviderTransportMirrorsMihomoSystemHostsDefault(t *testing.T) {
+	resolver.UseSystemHosts = false
+	initializeTestTransport()
+	if !resolver.UseSystemHosts {
+		t.Fatal("Mihomo default use-system-hosts behavior was not enabled")
+	}
 }
 
 func TestNormalizedProxy(t *testing.T) {
@@ -146,6 +152,29 @@ func TestExecuteFetchUsesMihomoProviderTransport(t *testing.T) {
 	}
 	if values := response.Headers["X-Provider-Test"]; len(values) != 1 || values[0] != "ok" {
 		t.Fatalf("response headers were not returned")
+	}
+}
+
+func TestExecuteFetchResolvesLocalHostname(t *testing.T) {
+	initializeTestTransport()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte("hostname-provider-body"))
+	}))
+	defer server.Close()
+
+	providerURL := strings.Replace(server.URL, "127.0.0.1", "localhost", 1)
+	response := executeFetch(fetchRequest{
+		Type:      "fetch",
+		ID:        19,
+		URL:       providerURL,
+		TimeoutMS: int64((5 * time.Second) / time.Millisecond),
+		SizeLimit: 1024,
+	})
+	if response.ErrorCode != "" {
+		t.Fatalf("executeFetch() hostname error = %s", response.ErrorCode)
+	}
+	if response.Status != http.StatusOK || string(response.Body) != "hostname-provider-body" {
+		t.Fatalf("executeFetch() hostname status/body = %d/%q", response.Status, response.Body)
 	}
 }
 
