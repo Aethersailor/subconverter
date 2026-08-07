@@ -1,0 +1,846 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aethersailor:subconverter:mihomo-conformance:capture:1",
+  "title": "Mihomo outbound conformance capture v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile",
+    "scenario_id",
+    "capture_id",
+    "captured_at",
+    "capture_complete",
+    "collector_errors",
+    "subject",
+    "environment",
+    "layers"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "profile": {
+      "enum": [
+        "http1_plaintext",
+        "https_http1",
+        "https_http2"
+      ]
+    },
+    "scenario_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "capture_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "capture_complete": {
+      "const": true
+    },
+    "collector_errors": {
+      "type": "array",
+      "maxItems": 0,
+      "items": {
+        "type": "string"
+      }
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "layers": {
+      "$ref": "#/$defs/layers"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sha256OrEmpty": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64})?$"
+    },
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "pseudoHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^:[a-z0-9-]+$"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name",
+        "version",
+        "artifact_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "official_mihomo",
+            "subconverter"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture",
+        "network_profile",
+        "resolver_profile",
+        "capture_tool",
+        "capture_tool_version"
+      ],
+      "properties": {
+        "os": {
+          "type": "string",
+          "minLength": 1
+        },
+        "architecture": {
+          "enum": [
+            "amd64",
+            "arm64"
+          ]
+        },
+        "network_profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolver_profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capture_tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capture_tool_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "dnsQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "timestamp_ns",
+        "transaction_id",
+        "name",
+        "query_type",
+        "transport",
+        "response_code",
+        "answers"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transaction_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "enum": [
+            "udp",
+            "tcp"
+          ]
+        },
+        "response_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "answers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "dnsLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "queries"
+      ],
+      "properties": {
+        "status": {
+          "const": "captured"
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dnsQuery"
+          }
+        }
+      }
+    },
+    "tcpConnection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "timestamp_ns",
+        "ip_version",
+        "source_ip",
+        "source_port",
+        "destination_ip",
+        "destination_port",
+        "outcome"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ip_version": {
+          "enum": [
+            4,
+            6
+          ]
+        },
+        "source_ip": {
+          "type": "string",
+          "format": "ip-address"
+        },
+        "source_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "destination_ip": {
+          "type": "string",
+          "format": "ip-address"
+        },
+        "destination_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "outcome": {
+          "enum": [
+            "connected",
+            "refused",
+            "reset",
+            "timeout"
+          ]
+        }
+      }
+    },
+    "tcpLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "connections"
+      ],
+      "properties": {
+        "status": {
+          "const": "captured"
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tcpConnection"
+          }
+        }
+      }
+    },
+    "tlsHandshake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "timestamp_ns",
+        "connection_sequence",
+        "sni",
+        "client_random",
+        "session_id",
+        "ja3",
+        "ja4",
+        "offered_versions",
+        "cipher_suites",
+        "extensions",
+        "supported_groups",
+        "signature_algorithms",
+        "key_share_groups",
+        "key_share_public_values",
+        "alpn_offered",
+        "alpn_selected",
+        "resumed"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connection_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sni": {
+          "type": "string"
+        },
+        "client_random": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "session_id": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{2})*$"
+        },
+        "ja3": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "ja4": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offered_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "cipher_suites": {
+          "$ref": "#/$defs/tlsIdList"
+        },
+        "extensions": {
+          "$ref": "#/$defs/tlsIdList"
+        },
+        "supported_groups": {
+          "$ref": "#/$defs/tlsIdList"
+        },
+        "signature_algorithms": {
+          "$ref": "#/$defs/tlsIdList"
+        },
+        "key_share_groups": {
+          "$ref": "#/$defs/tlsIdList"
+        },
+        "key_share_public_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{2})+$"
+          }
+        },
+        "alpn_offered": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "alpn_selected": {
+          "type": "string"
+        },
+        "resumed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "tlsIdList": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 65535
+      }
+    },
+    "tlsCapturedLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "handshakes"
+      ],
+      "properties": {
+        "status": {
+          "const": "captured"
+        },
+        "handshakes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tlsHandshake"
+          }
+        }
+      }
+    },
+    "tlsNotApplicableLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "const": "not_applicable"
+        },
+        "reason": {
+          "const": "plaintext"
+        }
+      }
+    },
+    "http1Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "timestamp_ns",
+        "connection_sequence",
+        "method",
+        "raw_target",
+        "version",
+        "headers",
+        "body_sha256",
+        "body_length"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connection_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "const": "HTTP/1.1"
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/header"
+          }
+        },
+        "body_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "body_length": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "http1CapturedLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "requests"
+      ],
+      "properties": {
+        "status": {
+          "const": "captured"
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/http1Request"
+          }
+        }
+      }
+    },
+    "http1NotApplicableLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "const": "not_applicable"
+        },
+        "reason": {
+          "const": "http2"
+        }
+      }
+    },
+    "http2Setting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "value"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "value": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "http2Priority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stream_id",
+        "dependency",
+        "weight",
+        "exclusive"
+      ],
+      "properties": {
+        "stream_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dependency": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "exclusive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "http2Goaway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "last_stream_id",
+        "error_code"
+      ],
+      "properties": {
+        "last_stream_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error_code": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "http2Connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connection_sequence",
+        "settings",
+        "connection_window_update",
+        "priority_frames",
+        "goaway_frames"
+      ],
+      "properties": {
+        "connection_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "settings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/http2Setting"
+          }
+        },
+        "connection_window_update": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "priority_frames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/http2Priority"
+          }
+        },
+        "goaway_frames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/http2Goaway"
+          }
+        }
+      }
+    },
+    "http2Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "timestamp_ns",
+        "connection_sequence",
+        "stream_id",
+        "pseudo_headers",
+        "headers",
+        "body_sha256",
+        "body_length"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connection_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stream_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pseudo_headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pseudoHeader"
+          }
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/header"
+          }
+        },
+        "body_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "body_length": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "http2CapturedLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "connections",
+        "requests"
+      ],
+      "properties": {
+        "status": {
+          "const": "captured"
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/http2Connection"
+          }
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/http2Request"
+          }
+        }
+      }
+    },
+    "http2NotApplicableLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "const": "not_applicable"
+        },
+        "reason": {
+          "const": "http1"
+        }
+      }
+    },
+    "applicationLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "result",
+        "requests_observed",
+        "downloaded_body_sha256",
+        "downloaded_body_length",
+        "elapsed_ms"
+      ],
+      "properties": {
+        "status": {
+          "const": "captured"
+        },
+        "result": {
+          "enum": [
+            "success",
+            "transport_error",
+            "protocol_error",
+            "parse_error",
+            "timeout"
+          ]
+        },
+        "requests_observed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "downloaded_body_sha256": {
+          "$ref": "#/$defs/sha256OrEmpty"
+        },
+        "downloaded_body_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "elapsed_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "layers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dns",
+        "tcp",
+        "tls",
+        "http1",
+        "http2",
+        "application"
+      ],
+      "properties": {
+        "dns": {
+          "$ref": "#/$defs/dnsLayer"
+        },
+        "tcp": {
+          "$ref": "#/$defs/tcpLayer"
+        },
+        "tls": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/tlsCapturedLayer"
+            },
+            {
+              "$ref": "#/$defs/tlsNotApplicableLayer"
+            }
+          ]
+        },
+        "http1": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/http1CapturedLayer"
+            },
+            {
+              "$ref": "#/$defs/http1NotApplicableLayer"
+            }
+          ]
+        },
+        "http2": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/http2CapturedLayer"
+            },
+            {
+              "$ref": "#/$defs/http2NotApplicableLayer"
+            }
+          ]
+        },
+        "application": {
+          "$ref": "#/$defs/applicationLayer"
+        }
+      }
+    }
+  }
+}

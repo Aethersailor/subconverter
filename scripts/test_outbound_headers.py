@@ -77,13 +77,13 @@ def main():
             raise RuntimeError("subconverter did not request the echo subscription")
 
         headers = CaptureHandler.captured_headers
-        allowed = {"accept", "host", "user-agent"}
+        allowed = {"accept", "accept-encoding", "host", "user-agent"}
         unexpected = sorted(set(headers).difference(allowed))
         if unexpected:
             raise RuntimeError("unexpected outbound headers: " + ", ".join(unexpected))
 
-        with open(".github/project-metadata.json", encoding="utf-8") as stream:
-            expected_user_agent = json.load(stream)["user_agent"]
+        with open(".github/source-lock.json", encoding="utf-8") as stream:
+            expected_user_agent = "clash.meta/" + json.load(stream)["mihomo"]["tag"]
         if headers.get("user-agent") != expected_user_agent:
             raise RuntimeError(
                 "unexpected User-Agent: {!r}, expected {!r}".format(

@@ -1,0 +1,109 @@
+{
+  "policy_version": 1,
+  "capture_schema_version": 1,
+  "profiles": {
+    "http1_plaintext": {
+      "layers": {
+        "dns": "captured",
+        "tcp": "captured",
+        "tls": "not_applicable",
+        "http1": "captured",
+        "http2": "not_applicable",
+        "application": "captured"
+      }
+    },
+    "https_http1": {
+      "layers": {
+        "dns": "captured",
+        "tcp": "captured",
+        "tls": "captured",
+        "http1": "captured",
+        "http2": "not_applicable",
+        "application": "captured"
+      }
+    },
+    "https_http2": {
+      "layers": {
+        "dns": "captured",
+        "tcp": "captured",
+        "tls": "captured",
+        "http1": "not_applicable",
+        "http2": "captured",
+        "application": "captured"
+      }
+    }
+  },
+  "masks": [
+    {
+      "path": "/capture_id",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/captured_at",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/subject/kind",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/subject/name",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/subject/version",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/subject/artifact_sha256",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/dns/queries/*/timestamp_ns",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/dns/queries/*/transaction_id",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/tcp/connections/*/timestamp_ns",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/tcp/connections/*/source_port",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/tls/handshakes/*/timestamp_ns",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/tls/handshakes/*/client_random",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/tls/handshakes/*/session_id",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/tls/handshakes/*/key_share_public_values/*",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/http1/requests/*/timestamp_ns",
+      "replacement": "<masked>"
+    },
+    {
+      "path": "/layers/http2/requests/*/timestamp_ns",
+      "replacement": "<masked>"
+    }
+  ],
+  "numeric_tolerances": [
+    {
+      "path": "/layers/application/elapsed_ms",
+      "absolute": 500,
+      "relative": 0.1
+    }
+  ]
+}

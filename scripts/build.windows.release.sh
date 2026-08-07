@@ -1,6 +1,12 @@
 #!/bin/bash
 set -xe
 
+: "${SUBCONVERTER_MIHOMO_FETCHER_BIN:?locked Mihomo helper binary is required}"
+: "${SUBCONVERTER_MIHOMO_FETCHER_MANIFEST:?locked Mihomo helper manifest is required}"
+: "${SUBCONVERTER_MIHOMO_FETCHER_PLATFORM:?locked Mihomo helper platform is required}"
+test -s "$SUBCONVERTER_MIHOMO_FETCHER_BIN"
+test -s "$SUBCONVERTER_MIHOMO_FETCHER_MANIFEST"
+
 git clone --no-checkout https://github.com/curl/curl
 cd curl
 git fetch --depth=1 origin 8cd1397d3c5c9b1526c8d74530266a7a9a22294b
@@ -66,9 +72,13 @@ rm -f C:/Strawberry/perl/bin/pkg-config C:/Strawberry/perl/bin/pkg-config.bat
 cmake -DCMAKE_BUILD_TYPE=Release \
       -DSUBCONVERTER_PROJECT_COMMIT="${SUBCONVERTER_PROJECT_COMMIT:-}" \
       -DSUBCONVERTER_BUILD_VERSION="${SUBCONVERTER_BUILD_VERSION:-}" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_BINARY="$SUBCONVERTER_MIHOMO_FETCHER_BIN" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_MANIFEST="$SUBCONVERTER_MIHOMO_FETCHER_MANIFEST" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_PLATFORM="$SUBCONVERTER_MIHOMO_FETCHER_PLATFORM" \
       -G "Unix Makefiles" .
 make -j4
 rm subconverter.exe
 # shellcheck disable=SC2046
 g++ $(find CMakeFiles/subconverter.dir/src -name "*.obj") curl/lib/libcurl.a -o base/subconverter.exe -static -Wl,--allow-multiple-definition -lbcrypt -lpcre2-8  -llibcron -lyaml-cpp -liphlpapi -lcrypt32 -lws2_32 -lwsock32 -lz  -Lquickjspp/quickjs -lquickjs -s
+bash scripts/install_locked_mihomo_fetcher.sh base
 mv base subconverter

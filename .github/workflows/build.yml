@@ -57,10 +57,136 @@ jobs:
           set -euo pipefail
           project_commit="$(git rev-parse HEAD)"
           version="$(python3 scripts/project_metadata.py version --project-commit "$project_commit")"
-          python3 scripts/project_metadata.py render --check
-          python3 -m unittest discover -s tests -v
           echo "project_commit=$project_commit" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify current source lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="$(mktemp -d "$RUNNER_TEMP/source-lock-evidence.XXXXXX")"
+          responses="$evidence_dir/responses.json"
+          printf '{}\n' > "$responses"
+
+          capture_response() {
+            local path="$1"
+            local response
+            response="$(mktemp "$RUNNER_TEMP/source-lock-response.XXXXXX")"
+            gh api \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "$path" > "$response"
+            jq \
+              --arg key "/$path" \
+              --slurpfile payload "$response" \
+              '. + {($key): $payload[0]}' \
+              "$responses" > "$responses.next"
+            mv "$responses.next" "$responses"
+            rm -f "$response"
+          }
+
+          upstream_ref='repos/asdlokj1qpi233/subconverter/git/ref/heads/master'
+          capture_response "$upstream_ref"
+          upstream_commit="$(jq -er --arg key "/$upstream_ref" '.[$key].object.sha' "$responses")"
+          capture_response "repos/asdlokj1qpi233/subconverter/git/commits/$upstream_commit"
+          capture_response "repos/asdlokj1qpi233/subconverter/contents/src/version.h?ref=$upstream_commit"
+
+          release_path='repos/MetaCubeX/mihomo/releases/latest'
+          capture_response "$release_path"
+          mihomo_tag="$(jq -er --arg key "/$release_path" '.[$key].tag_name' "$responses")"
+          tag_ref="repos/MetaCubeX/mihomo/git/ref/tags/$mihomo_tag"
+          capture_response "$tag_ref"
+          object_type="$(jq -er --arg key "/$tag_ref" '.[$key].object.type' "$responses")"
+          object_sha="$(jq -er --arg key "/$tag_ref" '.[$key].object.sha' "$responses")"
+          for _ in {1..8}; do
+            if [[ "$object_type" == commit ]]; then
+              break
+            fi
+            if [[ "$object_type" != tag ]]; then
+              echo "Mihomo release tag resolved to unsupported object type: $object_type" >&2
+              exit 1
+            fi
+            tag_object="repos/MetaCubeX/mihomo/git/tags/$object_sha"
+            capture_response "$tag_object"
+            object_type="$(jq -er --arg key "/$tag_object" '.[$key].object.type' "$responses")"
+            object_sha="$(jq -er --arg key "/$tag_object" '.[$key].object.sha' "$responses")"
+          done
+          if [[ "$object_type" != commit ]]; then
+            echo 'Mihomo release tag exceeded the supported annotation depth' >&2
+            exit 1
+          fi
+          capture_response "repos/MetaCubeX/mihomo/git/commits/$object_sha"
+
+          python3 scripts/resolve_source_lock.py \
+            --fixture-dir "$evidence_dir" \
+            --check \
+            --output .github/source-lock.json
+
+      - name: Verify generated README
+        shell: bash
+        run: python3 scripts/project_metadata.py render --check
+
+      - name: Run complete Python test suite
+        shell: bash
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Cache locked Mihomo release inputs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cache/mihomo-assets
+          key: mihomo-assets-${{ runner.os }}-${{ hashFiles('.github/source-lock.json') }}
+
+      - name: Build locked Mihomo helpers for every native target
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            linux-386
+            linux-amd64
+            linux-armv7
+            linux-arm64
+            macos-amd64
+            macos-arm64
+            windows-386
+            windows-amd64
+          )
+          for target in "${targets[@]}"; do
+            destination="mihomo-fetcher-pairs/$target"
+            helper_name=subconverter-mihomo-fetcher
+            if [[ "$target" == windows-* ]]; then
+              helper_name+=.exe
+            fi
+            mkdir -p "$destination"
+            python3 scripts/package_mihomo_fetcher.py build \
+              --platform "$target" \
+              --output "$destination/$helper_name" \
+              --manifest "$destination/subconverter-mihomo-fetcher.manifest.json" \
+              --cache-dir .cache/mihomo-assets
+            test -s "$destination/$helper_name"
+            test -s "$destination/subconverter-mihomo-fetcher.manifest.json"
+          done
+          test "$(find mihomo-fetcher-pairs -type f | wc -l)" -eq 16
+
+      - name: Compare linux-amd64 helper with official Mihomo oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test_mihomo_oracle_parity.py \
+            --helper mihomo-fetcher-pairs/linux-amd64/subconverter-mihomo-fetcher \
+            --helper-manifest mihomo-fetcher-pairs/linux-amd64/subconverter-mihomo-fetcher.manifest.json \
+            --cache-dir .cache/mihomo-assets \
+            --timeout-seconds 20
+
+      - name: Upload locked Mihomo helper pairs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mihomo-fetcher-pairs-${{ steps.metadata.outputs.project_commit }}
+          path: mihomo-fetcher-pairs/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
   linux:
     needs: prepare
@@ -92,15 +218,39 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
+      - name: Download locked Mihomo helper pairs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mihomo-fetcher-pairs-${{ needs.prepare.outputs.project_commit }}
+          path: mihomo-fetcher-pairs
+
+      - name: Verify Linux Mihomo helper pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          verification="$RUNNER_TEMP/mihomo-helper-verification/${{ matrix.artifact }}"
+          python3 scripts/package_mihomo_fetcher.py install \
+            --platform "${{ matrix.artifact }}" \
+            --binary "mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher" \
+            --manifest "mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.manifest.json" \
+            --destination "$verification/subconverter-mihomo-fetcher" \
+            --manifest-destination "$verification/subconverter-mihomo-fetcher.manifest.json"
+
       - name: Build
         env:
           SUBCONVERTER_PROJECT_COMMIT: ${{ needs.prepare.outputs.project_commit }}
           SUBCONVERTER_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+          SUBCONVERTER_MIHOMO_FETCHER_BIN: /root/workdir/mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher
+          SUBCONVERTER_MIHOMO_FETCHER_MANIFEST: /root/workdir/mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.manifest.json
+          SUBCONVERTER_MIHOMO_FETCHER_PLATFORM: ${{ matrix.artifact }}
         shell: bash
         run: |
           docker run --rm \
             -e SUBCONVERTER_PROJECT_COMMIT \
             -e SUBCONVERTER_BUILD_VERSION \
+            -e SUBCONVERTER_MIHOMO_FETCHER_BIN \
+            -e SUBCONVERTER_MIHOMO_FETCHER_MANIFEST \
+            -e SUBCONVERTER_MIHOMO_FETCHER_PLATFORM \
             -v "$GITHUB_WORKSPACE:/root/workdir" \
             "multiarch/alpine:${{ matrix.arch }}-latest-stable" \
             /bin/sh -c "apk add bash git && cd /root/workdir && chmod +x scripts/build.alpine.release.sh && bash scripts/build.alpine.release.sh"
@@ -140,10 +290,31 @@ jobs:
           ref: ${{ needs.prepare.outputs.project_commit }}
           fetch-depth: 0
 
+      - name: Download locked Mihomo helper pairs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mihomo-fetcher-pairs-${{ needs.prepare.outputs.project_commit }}
+          path: mihomo-fetcher-pairs
+
+      - name: Verify macOS Mihomo helper pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          verification="$RUNNER_TEMP/mihomo-helper-verification/${{ matrix.artifact }}"
+          python3 scripts/package_mihomo_fetcher.py install \
+            --platform "${{ matrix.artifact }}" \
+            --binary "mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher" \
+            --manifest "mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.manifest.json" \
+            --destination "$verification/subconverter-mihomo-fetcher" \
+            --manifest-destination "$verification/subconverter-mihomo-fetcher.manifest.json"
+
       - name: Build
         env:
           SUBCONVERTER_PROJECT_COMMIT: ${{ needs.prepare.outputs.project_commit }}
           SUBCONVERTER_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+          SUBCONVERTER_MIHOMO_FETCHER_BIN: ${{ github.workspace }}/mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher
+          SUBCONVERTER_MIHOMO_FETCHER_MANIFEST: ${{ github.workspace }}/mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.manifest.json
+          SUBCONVERTER_MIHOMO_FETCHER_PLATFORM: ${{ matrix.artifact }}
         shell: bash
         run: bash scripts/build.macos.release.sh
 
@@ -195,10 +366,30 @@ jobs:
           msystem: ${{ matrix.msystem }}
           path-type: inherit
 
+      - name: Download locked Mihomo helper pairs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mihomo-fetcher-pairs-${{ needs.prepare.outputs.project_commit }}
+          path: mihomo-fetcher-pairs
+
+      - name: Verify Windows Mihomo helper pair
+        shell: pwsh
+        run: |
+          $verification = Join-Path $env:RUNNER_TEMP "mihomo-helper-verification/${{ matrix.artifact }}"
+          py -3 -B scripts/package_mihomo_fetcher.py install `
+            --platform "${{ matrix.artifact }}" `
+            --binary "mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.exe" `
+            --manifest "mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.manifest.json" `
+            --destination "$verification/subconverter-mihomo-fetcher.exe" `
+            --manifest-destination "$verification/subconverter-mihomo-fetcher.manifest.json"
+
       - name: Build
         env:
           SUBCONVERTER_PROJECT_COMMIT: ${{ needs.prepare.outputs.project_commit }}
           SUBCONVERTER_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+          SUBCONVERTER_MIHOMO_FETCHER_BIN: ${{ github.workspace }}/mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.exe
+          SUBCONVERTER_MIHOMO_FETCHER_MANIFEST: ${{ github.workspace }}/mihomo-fetcher-pairs/${{ matrix.artifact }}/subconverter-mihomo-fetcher.manifest.json
+          SUBCONVERTER_MIHOMO_FETCHER_PLATFORM: ${{ matrix.artifact }}
         run: bash scripts/build.windows.release.sh
 
       - name: Package

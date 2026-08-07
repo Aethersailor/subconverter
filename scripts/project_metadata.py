@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 METADATA_PATH = ROOT / ".github" / "project-metadata.json"
+SOURCE_LOCK_PATH = ROOT / ".github" / "source-lock.json"
 TEMPLATE_PATH = ROOT / ".github" / "templates" / "README.md.tmpl"
 README_PATH = ROOT / "README.md"
 
@@ -25,9 +26,6 @@ def load_metadata():
         "upstream_version",
         "upstream_commit",
         "upstream_synced_at",
-        "user_agent",
-        "user_agent_source",
-        "user_agent_updated_at",
         "edition",
     }
     missing = sorted(required.difference(metadata))
@@ -47,9 +45,91 @@ def load_metadata():
     return metadata
 
 
-def render(metadata):
+def load_source_lock():
+    with SOURCE_LOCK_PATH.open(encoding="utf-8") as stream:
+        source_lock = json.load(stream)
+
+    required = {"schema_version", "mihomo", "pair_id", "project", "subconverter"}
+    missing = sorted(required.difference(source_lock))
+    if missing:
+        raise ValueError("missing source lock fields: " + ", ".join(missing))
+    if source_lock["schema_version"] != 1:
+        raise ValueError("unsupported source lock schema_version")
+
+    mihomo = source_lock["mihomo"]
+    mihomo_required = {"repository", "release_url", "tag", "tag_identity"}
+    missing = sorted(mihomo_required.difference(mihomo))
+    if missing:
+        raise ValueError("missing Mihomo source lock fields: " + ", ".join(missing))
+    if mihomo["repository"] != "MetaCubeX/mihomo":
+        raise ValueError("Mihomo source lock repository must be MetaCubeX/mihomo")
+    if not isinstance(mihomo["tag"], str) or not re.fullmatch(
+        r"v[0-9]+\.[0-9]+\.[0-9]+", mihomo["tag"]
+    ):
+        raise ValueError("Mihomo source lock tag must use vMAJOR.MINOR.PATCH")
+    expected_release_url = "https://github.com/{}/releases/tag/{}".format(
+        mihomo["repository"], mihomo["tag"]
+    )
+    if mihomo["release_url"] != expected_release_url:
+        raise ValueError("Mihomo source lock release_url does not match tag")
+
+    tag_identity = mihomo["tag_identity"]
+    if not isinstance(tag_identity, dict) or not re.fullmatch(
+        r"[0-9a-f]{40}", tag_identity.get("commit", "")
+    ):
+        raise ValueError("Mihomo source lock commit must be a full lowercase Git SHA")
+    if not isinstance(source_lock["pair_id"], str) or not re.fullmatch(
+        r"sha256:[0-9a-f]{64}", source_lock["pair_id"]
+    ):
+        raise ValueError("source lock pair_id must be a SHA-256 identity")
+
+    project = source_lock["project"]
+    if not isinstance(project, dict):
+        raise ValueError("source lock project identity must be an object")
+    if project.get("parity_contract") != "mihomo-provider-fetch-v1":
+        raise ValueError("unsupported Mihomo parity contract")
+    if project.get("helper_protocol") != 1:
+        raise ValueError("unsupported Mihomo helper protocol")
+    return source_lock
+
+
+def validate_source_lock(metadata, source_lock):
+    locked_upstream = source_lock["subconverter"]
+    expected = {
+        "repository": metadata["upstream_repository"],
+        "branch": metadata["upstream_branch"],
+        "version": metadata["upstream_version"],
+        "commit": metadata["upstream_commit"],
+    }
+    mismatches = [
+        key for key, value in expected.items() if locked_upstream.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            "source lock does not match project metadata: " + ", ".join(mismatches)
+        )
+
+
+def render(metadata, source_lock=None):
+    if source_lock is None:
+        source_lock = load_source_lock()
+    validate_source_lock(metadata, source_lock)
+
     values = {key.upper(): str(value) for key, value in metadata.items()}
     values["UPSTREAM_COMMIT_SHORT"] = metadata["upstream_commit"][:8]
+    mihomo = source_lock["mihomo"]
+    values.update(
+        {
+            "MIHOMO_REPOSITORY": mihomo["repository"],
+            "MIHOMO_RELEASE_URL": mihomo["release_url"],
+            "MIHOMO_TAG": mihomo["tag"],
+            "MIHOMO_COMMIT": mihomo["tag_identity"]["commit"],
+            "MIHOMO_COMMIT_SHORT": mihomo["tag_identity"]["commit"][:8],
+            "MIHOMO_PAIR_ID": source_lock["pair_id"],
+            "MIHOMO_PARITY_CONTRACT": source_lock["project"]["parity_contract"],
+            "MIHOMO_HELPER_PROTOCOL": str(source_lock["project"]["helper_protocol"]),
+        }
+    )
     content = TEMPLATE_PATH.read_text(encoding="utf-8")
     for key, value in values.items():
         content = content.replace("{{" + key + "}}", value)
@@ -113,12 +193,10 @@ def command_update(args):
     metadata = load_metadata()
     changed = False
     upstream_changed = False
-    user_agent_changed = False
 
     updates = {
         "upstream_version": args.upstream_version,
         "upstream_commit": args.upstream_commit,
-        "user_agent": args.user_agent,
     }
     for key, value in updates.items():
         if value is not None and metadata[key] != value:
@@ -126,8 +204,6 @@ def command_update(args):
             changed = True
             if key in {"upstream_version", "upstream_commit"}:
                 upstream_changed = True
-            elif key == "user_agent":
-                user_agent_changed = True
 
     if not changed:
         print("changed=false")
@@ -136,11 +212,10 @@ def command_update(args):
     timestamp = args.timestamp or datetime.now().astimezone().isoformat(timespec="seconds")
     if upstream_changed:
         metadata["upstream_synced_at"] = timestamp
-    if user_agent_changed:
-        metadata["user_agent_updated_at"] = timestamp
 
+    rendered_readme = render(metadata)
     write_metadata(metadata)
-    README_PATH.write_text(render(metadata), encoding="utf-8")
+    README_PATH.write_text(rendered_readme, encoding="utf-8")
     print("changed=true")
     return 0
 
@@ -160,7 +235,6 @@ def parser():
     update_command = commands.add_parser("update")
     update_command.add_argument("--upstream-version")
     update_command.add_argument("--upstream-commit")
-    update_command.add_argument("--user-agent")
     update_command.add_argument("--timestamp")
     update_command.set_defaults(func=command_update)
 

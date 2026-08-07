@@ -1,7 +1,13 @@
 #!/bin/bash
 set -xe
 
-apk add gcc g++ build-base linux-headers cmake make autoconf automake libtool
+: "${SUBCONVERTER_MIHOMO_FETCHER_BIN:?locked Mihomo helper binary is required}"
+: "${SUBCONVERTER_MIHOMO_FETCHER_MANIFEST:?locked Mihomo helper manifest is required}"
+: "${SUBCONVERTER_MIHOMO_FETCHER_PLATFORM:?locked Mihomo helper platform is required}"
+test -s "$SUBCONVERTER_MIHOMO_FETCHER_BIN"
+test -s "$SUBCONVERTER_MIHOMO_FETCHER_MANIFEST"
+
+apk add gcc g++ build-base linux-headers cmake make autoconf automake libtool python3
 apk add mbedtls-dev mbedtls-static zlib-dev rapidjson-dev zlib-static pcre2-dev
 
 git clone --no-checkout https://github.com/curl/curl
@@ -54,14 +60,20 @@ cd ..
 export PKG_CONFIG_PATH=/usr/lib64/pkgconfig
 cmake -DCMAKE_BUILD_TYPE=Release \
       -DSUBCONVERTER_PROJECT_COMMIT="${SUBCONVERTER_PROJECT_COMMIT:-}" \
-      -DSUBCONVERTER_BUILD_VERSION="${SUBCONVERTER_BUILD_VERSION:-}" .
+      -DSUBCONVERTER_BUILD_VERSION="${SUBCONVERTER_BUILD_VERSION:-}" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_BINARY="$SUBCONVERTER_MIHOMO_FETCHER_BIN" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_MANIFEST="$SUBCONVERTER_MIHOMO_FETCHER_MANIFEST" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_PLATFORM="$SUBCONVERTER_MIHOMO_FETCHER_PLATFORM" .
 make -j3
 rm subconverter
 # shellcheck disable=SC2046
 g++ -o base/subconverter $(find CMakeFiles/subconverter.dir/src/ -name "*.o")  -static -lpcre2-8 -lyaml-cpp -L/usr/lib64 -lcurl -lmbedtls -lmbedcrypto -lmbedx509 -lz -l:quickjs/libquickjs.a -llibcron -O3 -s
 
+bash scripts/install_locked_mihomo_fetcher.sh base
+
 cd base
 chmod +rx subconverter
+chmod +rx subconverter-mihomo-fetcher
 chmod +r ./*
 cd ..
 mv base subconverter

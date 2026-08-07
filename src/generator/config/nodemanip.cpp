@@ -142,7 +142,8 @@ int addNodes(std::string link, std::vector<Proxy> &allNodes, int groupID, parse_
         writeLog(LOG_TYPE_INFO, "Downloading subscription data...");
         if(startsWith(link, "surge:///install-config")) //surge config link
             link = urlDecode(getUrlArg(link, "url"));
-        strSub = webGet(link, proxy, global.cacheSubscription, &extra_headers, request_headers);
+        strSub = webGet(link, proxy, global.cacheSubscription, &extra_headers, request_headers,
+                        FetchPurpose::SubscriptionProvider);
         /*
         if(strSub.size() == 0)
         {
@@ -162,7 +163,8 @@ int addNodes(std::string link, std::vector<Proxy> &allNodes, int groupID, parse_
             writeLog(LOG_TYPE_INFO, "Parsing subscription data...");
             if(explodeConfContent(strSub, nodes) == 0)
             {
-                writeLog(LOG_TYPE_ERROR, "Invalid subscription: '" + link + "'!");
+                writeLog(LOG_TYPE_ERROR, "Invalid subscription from " +
+                                         describeFetchTarget(link, FetchPurpose::SubscriptionProvider) + "!");
                 return -1;
             }
             if(startsWith(strSub, "ssd://"))

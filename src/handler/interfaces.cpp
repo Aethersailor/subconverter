@@ -584,10 +584,11 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS) {
         importItems(urls, true);
         for (std::string &x: urls) {
             x = regTrim(x);
-            writeLog(0, "Fetching node data from url '" + x + "'.", LOG_LEVEL_INFO);
+            writeLog(0, "Fetching node data from " +
+                        describeFetchTarget(x, FetchPurpose::SubscriptionProvider) + ".", LOG_LEVEL_INFO);
             if (addNodes(x, insert_nodes, groupID, parse_set) == -1) {
                 if (global.skipFailedLinks)
-                    writeLog(0, "The following link doesn't contain any valid node info: " + x, LOG_LEVEL_WARNING);
+                    writeLog(0, "A redacted subscription source doesn't contain valid node info.", LOG_LEVEL_WARNING);
                 else {
                     *status_code = 400;
                     return "The following link doesn't contain any valid node info: " + x;
@@ -602,10 +603,11 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS) {
     for (std::string &x: urls) {
         x = regTrim(x);
         //std::cerr<<"Fetching node data from url '"<<x<<"'."<<std::endl;
-        writeLog(0, "Fetching node data from url '" + x + "'.", LOG_LEVEL_INFO);
+        writeLog(0, "Fetching node data from " +
+                    describeFetchTarget(x, FetchPurpose::SubscriptionProvider) + ".", LOG_LEVEL_INFO);
         if (addNodes(x, nodes, groupID, parse_set) == -1) {
             if (global.skipFailedLinks)
-                writeLog(0, "The following link doesn't contain any valid node info: " + x, LOG_LEVEL_WARNING);
+                writeLog(0, "A redacted subscription source doesn't contain valid node info.", LOG_LEVEL_WARNING);
             else {
                 *status_code = 400;
                 return "The following link doesn't contain any valid node info: " + x;
@@ -958,7 +960,8 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS) {
         *status_code = 400;
         return "Please insert your subscription link instead of clicking the default link.";
     }
-    writeLog(0, "SurgeConfToClash called with url '" + url + "'.", LOG_LEVEL_INFO);
+    writeLog(0, "SurgeConfToClash called with " +
+                describeFetchTarget(url, FetchPurpose::SubscriptionProvider) + ".", LOG_LEVEL_INFO);
 
     std::string proxy = parseProxy(global.proxyConfig);
     YAML::Node clash;
@@ -975,7 +978,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS) {
     }
     clash = YAML::Load(base_content);
 
-    base_content = fetchFile(url, proxy, global.cacheConfig);
+    base_content = fetchFile(url, proxy, global.cacheConfig, true, FetchPurpose::SubscriptionProvider);
 
     if (ini.parse(base_content) != INIREADER_EXCEPTION_NONE) {
         std::string errmsg = "Parsing Surge config failed! Reason: " + ini.get_last_error();
@@ -1040,10 +1043,11 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS) {
     parse_set.authorized = !global.APIMode;
     for (std::string &x: links) {
         //std::cerr<<"Fetching node data from url '"<<x<<"'."<<std::endl;
-        writeLog(0, "Fetching node data from url '" + x + "'.", LOG_LEVEL_INFO);
+        writeLog(0, "Fetching node data from " +
+                    describeFetchTarget(x, FetchPurpose::SubscriptionProvider) + ".", LOG_LEVEL_INFO);
         if (addNodes(x, nodes, 0, parse_set) == -1) {
             if (global.skipFailedLinks)
-                writeLog(0, "The following link doesn't contain any valid node info: " + x, LOG_LEVEL_WARNING);
+                writeLog(0, "A redacted subscription source doesn't contain valid node info.", LOG_LEVEL_WARNING);
             else {
                 *status_code = 400;
                 return "The following link doesn't contain any valid node info: " + x;
@@ -1352,7 +1356,8 @@ int simpleGenerator() {
         } else {
             if (ini.get_bool("direct")) {
                 std::string url = ini.get("url");
-                content = fetchFile(url, proxy, global.cacheSubscription);
+                content = fetchFile(url, proxy, global.cacheSubscription, true,
+                                    FetchPurpose::SubscriptionProvider);
                 if (content.empty()) {
                     //std::cerr<<"Artifact '"<<x<<"' generate ERROR! Please check your link.\n\n";
                     writeLog(0, "Artifact '" + x + "' generate ERROR! Please check your link.\n", LOG_LEVEL_ERROR);

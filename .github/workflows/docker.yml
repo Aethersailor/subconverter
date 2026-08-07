@@ -17,7 +17,7 @@ on:
         default: false
         type: boolean
       run_smoke:
-        description: Build amd64 and run integration tests
+        description: Build amd64 and run integration tests (always enforced before publishing)
         required: false
         default: true
         type: boolean
@@ -43,7 +43,7 @@ on:
         default: false
         type: boolean
       run_smoke:
-        description: Run the outbound-header smoke test before publishing
+        description: Run the outbound-header smoke test (always enforced before publishing)
         required: true
         default: true
         type: boolean
@@ -94,7 +94,86 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
 
-      - name: Resolve build metadata
+      - name: Verify current and complete source lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="$(mktemp -d "$RUNNER_TEMP/source-lock-evidence.XXXXXX")"
+          responses="$evidence_dir/responses.json"
+          printf '{}\n' > "$responses"
+
+          capture_response() {
+            local path="$1"
+            local response
+            response="$(mktemp "$RUNNER_TEMP/source-lock-response.XXXXXX")"
+            gh api \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "$path" > "$response"
+            jq \
+              --arg key "/$path" \
+              --slurpfile payload "$response" \
+              '. + {($key): $payload[0]}' \
+              "$responses" > "$responses.next"
+            mv "$responses.next" "$responses"
+            rm -f "$response"
+          }
+
+          upstream_ref='repos/asdlokj1qpi233/subconverter/git/ref/heads/master'
+          capture_response "$upstream_ref"
+          upstream_commit="$(jq -er --arg key "/$upstream_ref" '.[$key].object.sha' "$responses")"
+          capture_response "repos/asdlokj1qpi233/subconverter/git/commits/$upstream_commit"
+          capture_response "repos/asdlokj1qpi233/subconverter/contents/src/version.h?ref=$upstream_commit"
+
+          release_path='repos/MetaCubeX/mihomo/releases/latest'
+          capture_response "$release_path"
+          mihomo_tag="$(jq -er --arg key "/$release_path" '.[$key].tag_name' "$responses")"
+          tag_ref="repos/MetaCubeX/mihomo/git/ref/tags/$mihomo_tag"
+          capture_response "$tag_ref"
+          object_type="$(jq -er --arg key "/$tag_ref" '.[$key].object.type' "$responses")"
+          object_sha="$(jq -er --arg key "/$tag_ref" '.[$key].object.sha' "$responses")"
+          for _ in {1..8}; do
+            if [[ "$object_type" == commit ]]; then
+              break
+            fi
+            if [[ "$object_type" != tag ]]; then
+              echo "Mihomo release tag resolved to unsupported object type: $object_type" >&2
+              exit 1
+            fi
+            tag_object="repos/MetaCubeX/mihomo/git/tags/$object_sha"
+            capture_response "$tag_object"
+            object_type="$(jq -er --arg key "/$tag_object" '.[$key].object.type' "$responses")"
+            object_sha="$(jq -er --arg key "/$tag_object" '.[$key].object.sha' "$responses")"
+          done
+          if [[ "$object_type" != commit ]]; then
+            echo 'Mihomo release tag exceeded the supported annotation depth' >&2
+            exit 1
+          fi
+          capture_response "repos/MetaCubeX/mihomo/git/commits/$object_sha"
+
+          python3 scripts/resolve_source_lock.py \
+            --fixture-dir "$evidence_dir" \
+            --output .github/source-lock.json \
+            --check
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path("scripts").resolve()))
+          from package_mihomo_fetcher import load_and_validate_lock
+
+          lock = load_and_validate_lock(".github/source-lock.json")
+          mihomo = lock["mihomo"]
+          print(
+              "Verified locked Mihomo {} at {} with pair {}".format(
+                  mihomo["tag"], mihomo["tag_identity"]["commit"], lock["pair_id"]
+              )
+          )
+          PY
+
+      - name: Resolve and verify build metadata
         id: metadata
         env:
           EXPECTED_VERSION: ${{ inputs.version }}
@@ -126,6 +205,9 @@ jobs:
             publish_stable=false
             run_smoke=true
           fi
+          if [[ "$should_push" == "true" ]]; then
+            run_smoke=true
+          fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "project_commit=$project_commit" >> "$GITHUB_OUTPUT"
@@ -135,6 +217,10 @@ jobs:
           echo "publish_latest=$publish_latest" >> "$GITHUB_OUTPUT"
           echo "publish_stable=$publish_stable" >> "$GITHUB_OUTPUT"
           echo "run_smoke=$run_smoke" >> "$GITHUB_OUTPUT"
+
+      - name: Run Python tests
+        shell: bash
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
 
   smoke:
     needs: prepare
@@ -163,7 +249,77 @@ jobs:
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             UPSTREAM_COMMIT=${{ needs.prepare.outputs.upstream_commit }}
 
-      - name: Run image integration tests
+      - name: Verify image helper and manifest pair
+        env:
+          IMAGE: local/subconverter:${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          inspect_container=""
+          cleanup() {
+            if [[ -n "$inspect_container" ]]; then
+              docker rm -f "$inspect_container" >/dev/null 2>&1 || true
+            fi
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+
+          expected_helper_path=/usr/bin/subconverter-mihomo-fetcher
+          expected_manifest_path=/usr/share/subconverter/subconverter-mihomo-fetcher.manifest.json
+          docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" \
+            | grep -Fx "SUBCONVERTER_MIHOMO_FETCHER_PATH=$expected_helper_path"
+
+          inspect_container="$(docker create "$IMAGE")"
+          docker cp "$inspect_container:$expected_helper_path" "$work/helper"
+          docker cp "$inspect_container:$expected_manifest_path" "$work/manifest.json"
+          docker rm "$inspect_container" >/dev/null
+          inspect_container=""
+
+          python3 scripts/package_mihomo_fetcher.py install \
+            --platform linux-amd64 \
+            --binary "$work/helper" \
+            --manifest "$work/manifest.json" \
+            --destination "$work/verified/helper" \
+            --manifest-destination "$work/verified/manifest.json"
+          cmp "$work/helper" "$work/verified/helper"
+          cmp "$work/manifest.json" "$work/verified/manifest.json"
+
+          cp "$work/helper" "$work/tampered-helper"
+          printf '\0' >> "$work/tampered-helper"
+          python3 - "$work/manifest.json" "$work/tampered-manifest.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              manifest = json.load(stream)
+          manifest["pair_id"] = "sha256:" + "0" * 64
+          with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as stream:
+              json.dump(manifest, stream, ensure_ascii=True, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+
+          reject_pair() {
+            local label="$1"
+            local binary="$2"
+            local manifest="$3"
+            if python3 scripts/package_mihomo_fetcher.py install \
+              --platform linux-amd64 \
+              --binary "$binary" \
+              --manifest "$manifest" \
+              --destination "$work/rejected-$label/helper" \
+              --manifest-destination "$work/rejected-$label/manifest.json"; then
+              echo "Image identity verifier accepted $label" >&2
+              exit 1
+            fi
+          }
+
+          reject_pair missing-helper "$work/missing-helper" "$work/manifest.json"
+          reject_pair missing-manifest "$work/helper" "$work/missing-manifest.json"
+          reject_pair tampered-helper "$work/tampered-helper" "$work/manifest.json"
+          reject_pair tampered-manifest "$work/helper" "$work/tampered-manifest.json"
+
+      - name: Run real SubscriptionProvider outbound integration test
         env:
           IMAGE: local/subconverter:${{ needs.prepare.outputs.version }}
           EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}

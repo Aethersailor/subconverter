@@ -15,6 +15,12 @@ enum http_method
     HTTP_PATCH
 };
 
+enum class FetchPurpose
+{
+    Generic,
+    SubscriptionProvider
+};
+
 struct FetchArgument
 {
     const http_method method;
@@ -25,6 +31,8 @@ struct FetchArgument
     std::string *cookies = nullptr;
     const unsigned int cache_ttl = 0;
     const bool keep_resp_on_fail = false;
+    const FetchPurpose purpose = FetchPurpose::Generic;
+    const std::string *old_hash = nullptr;
 };
 
 struct FetchResult
@@ -33,10 +41,18 @@ struct FetchResult
     std::string *content = nullptr;
     std::string *response_headers = nullptr;
     std::string *cookies = nullptr;
+    std::string *body_hash = nullptr;
 };
 
+class FetchDispatcher
+{
+public:
+    static int dispatch(const FetchArgument &argument, FetchResult &result);
+};
+
+std::string describeFetchTarget(const std::string &url, FetchPurpose purpose);
 int webGet(const FetchArgument& argument, FetchResult &result);
-std::string webGet(const std::string &url, const std::string &proxy = "", unsigned int cache_ttl = 0, std::string *response_headers = nullptr, string_icase_map *request_headers = nullptr);
+std::string webGet(const std::string &url, const std::string &proxy = "", unsigned int cache_ttl = 0, std::string *response_headers = nullptr, string_icase_map *request_headers = nullptr, FetchPurpose purpose = FetchPurpose::Generic);
 void flushCache();
 int webPost(const std::string &url, const std::string &data, const std::string &proxy, const string_icase_map &request_headers, std::string *retData);
 int webPatch(const std::string &url, const std::string &data, const std::string &proxy, const string_icase_map &request_headers, std::string *retData);

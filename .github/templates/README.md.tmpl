@@ -12,14 +12,18 @@
 | 上游版本 | `{{UPSTREAM_VERSION}}` |
 | 上游提交 | [`{{UPSTREAM_COMMIT_SHORT}}`](https://github.com/{{UPSTREAM_REPOSITORY}}/commit/{{UPSTREAM_COMMIT}}) |
 | 上游源码同步时间 | `{{UPSTREAM_SYNCED_AT}}` |
-| 当前 Mihomo User-Agent | `{{USER_AGENT}}` |
-| User-Agent 来源 | [{{USER_AGENT_SOURCE}} 最新 Release](https://github.com/{{USER_AGENT_SOURCE}}/releases/latest) |
-| UA 同步时间 | `{{USER_AGENT_UPDATED_AT}}` |
+| 锁定的 Mihomo Release | [`{{MIHOMO_TAG}}`]({{MIHOMO_RELEASE_URL}}) |
+| 锁定的 Mihomo 提交 | [`{{MIHOMO_COMMIT_SHORT}}`](https://github.com/{{MIHOMO_REPOSITORY}}/commit/{{MIHOMO_COMMIT}}) |
+| 源码配对 ID | `{{MIHOMO_PAIR_ID}}` |
+| 模仿契约 | `{{MIHOMO_PARITY_CONTRACT}}`（helper protocol `{{MIHOMO_HELPER_PROTOCOL}}`） |
 | 本项目版本后缀 | `{{EDITION}}` |
 
 ## 与上游的区别
 
-- 出站订阅和规则请求默认使用自动跟踪的 Mihomo 最新版本 User-Agent。
+- 只有调用链显式标记为 `SubscriptionProvider` 的机场订阅获取路径由配套 helper 执行；helper 从上表锁定的官方 Mihomo tag/commit 源码构建，并复用 Mihomo 的订阅 Provider 获取实现，而不是只替换一个 User-Agent 字符串。
+- helper 的 Mihomo 身份、项目适配层和构建输入由 `.github/source-lock.json` 的配对 ID 绑定；身份不匹配时拒绝降级到普通 HTTP 路径。
+- 原生构建会把 helper 的精确 SHA-256 固化进 subconverter，并用锁定的官方 Mihomo 可执行文件逐字段对照 HTTP/1.1 请求和 TLS ClientHello；只归一化动态端口、随机数、会话 ID 与临时密钥字节。
+- 未标记为 `SubscriptionProvider` 的 Generic 出站请求（包括普通规则和模板下载）继续使用上游的 `subconverter/<version> cURL/<libcurl-version>` User-Agent，不会因为是出站请求就一律伪装成 Mihomo。
 - 不发送 `SubConverter-Request`、`SubConverter-Version` 和 CORS `X-Requested-With` 指纹头。
 - GET 和 HEAD 请求不再默认发送 JSON `Content-Type`。
 - 订阅入口收到的客户端、CDN 和反向代理请求头不会透传到目标地址。
@@ -41,7 +45,7 @@ v<上游版本>-<上游提交>-af.<本项目提交>
 v0.9.9-633ecd5a-af.1a2b3c4d
 ```
 
-前半部分用于定位上游版本和提交，`af` 后的提交来自本仓库。Mihomo User-Agent 版本不会进入程序版本、Git 标签、Release 名称、构件名称或 Docker 标签。
+前半部分用于定位上游版本和提交，`af` 后的提交来自本仓库。Mihomo helper 的身份由源码锁和配对 ID 单独标识，不会混入 subconverter 的程序版本。
 
 ## Docker 镜像
 
@@ -60,7 +64,8 @@ curl http://127.0.0.1:25500/version
 
 ## 自动更新
 
-- 每日检查上游提交和 Mihomo 最新 Release，也支持手动触发。
+- 定时检查上游提交和 Mihomo 最新稳定 Release，也支持手动触发。
+- Mihomo 更新必须重新解析官方 tag/commit、构建输入与平台基准，并生成新的源码配对 ID；README 不维护第二份 Mihomo 版本号。
 - 没有变化时不会创建同步提交或重复发布。
 - 候选代码、原生构件和镜像通过测试后，才会更新 `master` 和公开标签。
 - 上游原始标签不会被移动，也不会被复制为缺少本项目后缀的发布标签。

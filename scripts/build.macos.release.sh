@@ -1,6 +1,12 @@
 #!/bin/bash
 set -xe
 
+: "${SUBCONVERTER_MIHOMO_FETCHER_BIN:?locked Mihomo helper binary is required}"
+: "${SUBCONVERTER_MIHOMO_FETCHER_MANIFEST:?locked Mihomo helper manifest is required}"
+: "${SUBCONVERTER_MIHOMO_FETCHER_PLATFORM:?locked Mihomo helper platform is required}"
+test -s "$SUBCONVERTER_MIHOMO_FETCHER_BIN"
+test -s "$SUBCONVERTER_MIHOMO_FETCHER_MANIFEST"
+
 brew reinstall rapidjson zlib pcre2 pkgconfig
 
 #git clone https://github.com/curl/curl --depth=1 --branch curl-7_88_1
@@ -58,14 +64,20 @@ cd ..
 
 cmake -DCMAKE_BUILD_TYPE=Release \
       -DSUBCONVERTER_PROJECT_COMMIT="${SUBCONVERTER_PROJECT_COMMIT:-}" \
-      -DSUBCONVERTER_BUILD_VERSION="${SUBCONVERTER_BUILD_VERSION:-}" .
+      -DSUBCONVERTER_BUILD_VERSION="${SUBCONVERTER_BUILD_VERSION:-}" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_BINARY="$SUBCONVERTER_MIHOMO_FETCHER_BIN" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_MANIFEST="$SUBCONVERTER_MIHOMO_FETCHER_MANIFEST" \
+      -DSUBCONVERTER_MIHOMO_FETCHER_PLATFORM="$SUBCONVERTER_MIHOMO_FETCHER_PLATFORM" .
 make -j6
 rm subconverter
 # shellcheck disable=SC2046
 c++ -Xlinker -unexported_symbol -Xlinker "*" -o base/subconverter -framework CoreFoundation -framework Security $(find CMakeFiles/subconverter.dir/src/ -name "*.o") "$(brew --prefix zlib)/lib/libz.a" "$(brew --prefix pcre2)/lib/libpcre2-8.a" $(find . -name "*.a") -lcurl -O3
 
+bash scripts/install_locked_mihomo_fetcher.sh base
+
 cd base
 chmod +rx subconverter
+chmod +rx subconverter-mihomo-fetcher
 chmod +r ./*
 cd ..
 mv base subconverter

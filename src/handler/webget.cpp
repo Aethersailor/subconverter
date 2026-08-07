@@ -8,6 +8,7 @@
 #include <curl/curl.h>
 
 #include "handler/settings.h"
+#include "handler/mihomo_fetch_client.h"
 #include "utils/base64/base64.h"
 #include "utils/defer.h"
 #include "utils/file_extra.h"
@@ -30,7 +31,14 @@ std::mutex cache_rw_lock;
 
 RWLock cache_rw_lock;
 
-static constexpr auto user_agent_str = SUBCONVERTER_OUTBOUND_USER_AGENT;
+static constexpr auto user_agent_str = "subconverter/" VERSION " cURL/" LIBCURL_VERSION;
+
+std::string describeFetchTarget(const std::string &url, FetchPurpose purpose)
+{
+    if(purpose == FetchPurpose::SubscriptionProvider)
+        return "subscription target [redacted]";
+    return "'" + url + "'";
+}
 
 struct curl_progress_data
 {
@@ -300,13 +308,13 @@ std::string buildSocks5ProxyString(const std::string &addr, int port, const std:
     return proxystr;
 }
 
-std::string webGet(const std::string &url, const std::string &proxy, unsigned int cache_ttl, std::string *response_headers, string_icase_map *request_headers)
+std::string webGet(const std::string &url, const std::string &proxy, unsigned int cache_ttl, std::string *response_headers, string_icase_map *request_headers, FetchPurpose purpose)
 {
     int return_code = 0;
-    std::string content;
+    std::string content, old_hash, body_hash;
 
-    FetchArgument argument {HTTP_GET, url, proxy, nullptr, request_headers, nullptr, cache_ttl};
-    FetchResult fetch_res {&return_code, &content, response_headers, nullptr};
+    FetchArgument argument {HTTP_GET, url, proxy, nullptr, request_headers, nullptr, cache_ttl, false, purpose, &old_hash};
+    FetchResult fetch_res {&return_code, &content, response_headers, nullptr, &body_hash};
 
     if (startsWith(url, "data:"))
         return dataGet(url);
@@ -314,7 +322,16 @@ std::string webGet(const std::string &url, const std::string &proxy, unsigned in
     if(cache_ttl > 0)
     {
         md("cache");
-        const std::string url_md5 = getMD5(url);
+        const std::string log_target = describeFetchTarget(url, purpose);
+        std::string cache_identity = std::to_string(static_cast<int>(purpose)) + "\n" + url + "\n" + proxy;
+        if(purpose == FetchPurpose::SubscriptionProvider)
+            cache_identity += "\n" SUBCONVERTER_MIHOMO_COMMIT;
+        if(request_headers)
+        {
+            for(const auto &[name, value] : *request_headers)
+                cache_identity += "\n" + name + ":" + value;
+        }
+        const std::string url_md5 = getMD5(cache_identity);
         const std::string path = "cache/" + url_md5, path_header = path + "_header";
         struct stat result {};
         if(stat(path.data(), &result) == 0) // cache exist
@@ -322,7 +339,7 @@ std::string webGet(const std::string &url, const std::string &proxy, unsigned in
             time_t mtime = result.st_mtime, now = time(nullptr); // get cache modified time and current time
             if(difftime(now, mtime) <= cache_ttl) // within TTL
             {
-                writeLog(0, "CACHE HIT: '" + url + "', using local cache.");
+                writeLog(0, "CACHE HIT: " + log_target + ", using local cache.");
                 //guarded_mutex guard(cache_rw_lock);
                 cache_rw_lock.readLock();
                 defer(cache_rw_lock.readUnlock();)
@@ -330,12 +347,13 @@ std::string webGet(const std::string &url, const std::string &proxy, unsigned in
                     *response_headers = fileGet(path_header, true);
                 return fileGet(path, true);
             }
-            writeLog(0, "CACHE MISS: '" + url + "', TTL timeout, creating new cache."); // out of TTL
+            writeLog(0, "CACHE MISS: " + log_target + ", TTL timeout, creating new cache."); // out of TTL
+            old_hash = getMD5(fileGet(path, true));
         }
         else
-            writeLog(0, "CACHE NOT EXIST: '" + url + "', creating new cache.");
+            writeLog(0, "CACHE NOT EXIST: " + log_target + ", creating new cache.");
         //content = curlGet(url, proxy, response_headers, return_code); // try to fetch data
-        curlGet(argument, fetch_res);
+        FetchDispatcher::dispatch(argument, fetch_res);
         if(return_code == 200) // success, save new cache
         {
             //guarded_mutex guard(cache_rw_lock);
@@ -344,6 +362,26 @@ std::string webGet(const std::string &url, const std::string &proxy, unsigned in
             fileWrite(path, content, true);
             if(response_headers)
                 fileWrite(path_header, *response_headers, true);
+        }
+        else if(return_code == 304 && fileExist(path))
+        {
+            writeLog(0, "Subscription content not modified. Refreshing local cache TTL.");
+            cache_rw_lock.writeLock();
+            defer(cache_rw_lock.writeUnlock();)
+            content = fileGet(path, true);
+            fileWrite(path, content, true);
+            if(response_headers)
+            {
+                const std::string not_modified_headers = *response_headers;
+                *response_headers = fileGet(path_header, true);
+                if(!not_modified_headers.empty())
+                {
+                    if(!response_headers->empty() && !endsWith(*response_headers, "\r\n"))
+                        *response_headers += "\r\n";
+                    *response_headers += not_modified_headers;
+                    fileWrite(path_header, *response_headers, true);
+                }
+            }
         }
         else
         {
@@ -363,7 +401,7 @@ std::string webGet(const std::string &url, const std::string &proxy, unsigned in
         return content;
     }
     //return curlGet(url, proxy, response_headers, return_code);
-    curlGet(argument, fetch_res);
+    FetchDispatcher::dispatch(argument, fetch_res);
     return content;
 }
 
@@ -412,5 +450,19 @@ string_array headers_map_to_array(const string_map &headers)
 
 int webGet(const FetchArgument& argument, FetchResult &result)
 {
-    return curlGet(argument, result);
+    return FetchDispatcher::dispatch(argument, result);
+}
+
+int FetchDispatcher::dispatch(const FetchArgument &argument, FetchResult &result)
+{
+    switch(argument.purpose)
+    {
+    case FetchPurpose::Generic:
+        return curlGet(argument, result);
+    case FetchPurpose::SubscriptionProvider:
+        return mihomoFetch(argument, result);
+    }
+
+    *result.status_code = 0;
+    return 0;
 }

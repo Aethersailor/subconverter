@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 import unittest
 from pathlib import Path
@@ -24,16 +25,40 @@ class ProjectCustomizationTests(unittest.TestCase):
 
     def test_readme_matches_metadata_template(self):
         metadata = PROJECT_METADATA.load_metadata()
-        expected = PROJECT_METADATA.render(metadata)
+        source_lock = PROJECT_METADATA.load_source_lock()
+        expected = PROJECT_METADATA.render(metadata, source_lock)
         actual = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertEqual(actual, expected)
+
+    def test_mihomo_readme_identity_comes_only_from_source_lock(self):
+        metadata = PROJECT_METADATA.load_metadata()
+        source_lock = PROJECT_METADATA.load_source_lock()
+        self.assertNotIn("user_agent", metadata)
+        self.assertNotIn("user_agent_source", metadata)
+        self.assertNotIn("user_agent_updated_at", metadata)
+
+        readme = PROJECT_METADATA.render(metadata, source_lock)
+        mihomo = source_lock["mihomo"]
+        self.assertIn(mihomo["tag"], readme)
+        self.assertIn(mihomo["tag_identity"]["commit"][:8], readme)
+        self.assertIn(source_lock["pair_id"], readme)
+        self.assertIn("显式标记为 `SubscriptionProvider`", readme)
+        self.assertIn("不是只替换一个 User-Agent 字符串", readme)
+        self.assertIn("Generic 出站请求", readme)
+
+    def test_readme_render_fails_when_source_lock_and_metadata_diverge(self):
+        metadata = PROJECT_METADATA.load_metadata()
+        source_lock = copy.deepcopy(PROJECT_METADATA.load_source_lock())
+        source_lock["subconverter"]["commit"] = "0" * 40
+        with self.assertRaisesRegex(ValueError, "source lock does not match"):
+            PROJECT_METADATA.render(metadata, source_lock)
 
     def test_outbound_identity_has_no_legacy_fingerprint_headers(self):
         source = (ROOT / "src" / "handler" / "webget.cpp").read_text(encoding="utf-8")
         self.assertNotIn("SubConverter-Request:", source)
         self.assertNotIn("SubConverter-Version:", source)
         self.assertNotIn("X-Requested-With: subconverter", source)
-        self.assertIn("SUBCONVERTER_OUTBOUND_USER_AGENT", source)
+        self.assertIn('"subconverter/" VERSION " cURL/" LIBCURL_VERSION', source)
 
     def test_subscription_entry_headers_are_sanitized(self):
         source = (ROOT / "src" / "handler" / "interfaces.cpp").read_text(
@@ -46,7 +71,19 @@ class ProjectCustomizationTests(unittest.TestCase):
         integration_test = (
             ROOT / "scripts" / "test_outbound_headers.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('allowed = {"accept", "host", "user-agent"}', integration_test)
+        self.assertIn(
+            'allowed = {"accept", "accept-encoding", "host", "user-agent"}',
+            integration_test,
+        )
+
+    def test_inbound_verbose_logs_do_not_emit_query_tokens_or_header_values(self):
+        source = (ROOT / "src" / "server" / "webserver_httplib.cpp").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("req.target.find('?')", source)
+        self.assertIn('"handle_header_names: " + header_names', source)
+        self.assertNotIn('" handle_uri:    " + req.target', source)
+        self.assertNotIn('"handle_header: " + dump(req.headers)', source)
 
     def test_metadata_uses_full_upstream_commit(self):
         metadata = PROJECT_METADATA.load_metadata()

@@ -1,8 +1,40 @@
+FROM --platform=linux/amd64 alpine:3.22 AS mihomo-fetcher-builder
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+WORKDIR /src
+
+RUN apk add --no-cache ca-certificates git python3
+
+COPY . /src
+
+RUN set -eux; \
+    test "$TARGETOS" = linux; \
+    case "$TARGETARCH/$TARGETVARIANT" in \
+        amd64/*) helper_platform=linux-amd64 ;; \
+        386/*) helper_platform=linux-386 ;; \
+        arm/v7) helper_platform=linux-armv7 ;; \
+        arm64/*) helper_platform=linux-arm64 ;; \
+        *) echo "unsupported Docker helper target: $TARGETOS/$TARGETARCH/$TARGETVARIANT" >&2; exit 1 ;; \
+    esac; \
+    python3 scripts/package_mihomo_fetcher.py build \
+        --platform "$helper_platform" \
+        --output /out/subconverter-mihomo-fetcher \
+        --manifest /out/subconverter-mihomo-fetcher.manifest.json \
+        --cache-dir /tmp/mihomo-assets; \
+    test -x /out/subconverter-mihomo-fetcher; \
+    test -s /out/subconverter-mihomo-fetcher.manifest.json
+
 FROM alpine:3.22 AS builder
 
 ARG THREADS=4
 ARG PROJECT_COMMIT=local
 ARG BUILD_VERSION=
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
 
 WORKDIR /build
 
@@ -44,12 +76,25 @@ RUN set -eux; \
     cmake --install /tmp/toml11/build
 
 COPY . /src
+COPY --from=mihomo-fetcher-builder /out/subconverter-mihomo-fetcher /locked-mihomo-helper/subconverter-mihomo-fetcher
+COPY --from=mihomo-fetcher-builder /out/subconverter-mihomo-fetcher.manifest.json /locked-mihomo-helper/subconverter-mihomo-fetcher.manifest.json
 
 RUN set -eux; \
+    test "$TARGETOS" = linux; \
+    case "$TARGETARCH/$TARGETVARIANT" in \
+        amd64/*) helper_platform=linux-amd64 ;; \
+        386/*) helper_platform=linux-386 ;; \
+        arm/v7) helper_platform=linux-armv7 ;; \
+        arm64/*) helper_platform=linux-arm64 ;; \
+        *) echo "unsupported Docker helper target: $TARGETOS/$TARGETARCH/$TARGETVARIANT" >&2; exit 1 ;; \
+    esac; \
     cmake -S /src -B /build/subconverter \
         -DCMAKE_BUILD_TYPE=Release \
         -DSUBCONVERTER_PROJECT_COMMIT="$PROJECT_COMMIT" \
-        -DSUBCONVERTER_BUILD_VERSION="$BUILD_VERSION"; \
+        -DSUBCONVERTER_BUILD_VERSION="$BUILD_VERSION" \
+        -DSUBCONVERTER_MIHOMO_FETCHER_BINARY=/locked-mihomo-helper/subconverter-mihomo-fetcher \
+        -DSUBCONVERTER_MIHOMO_FETCHER_MANIFEST=/locked-mihomo-helper/subconverter-mihomo-fetcher.manifest.json \
+        -DSUBCONVERTER_MIHOMO_FETCHER_PLATFORM="$helper_platform"; \
     cmake --build /build/subconverter --parallel "$THREADS"
 
 FROM alpine:3.22
@@ -68,8 +113,15 @@ RUN apk add --no-cache curl libstdc++ pcre2 yaml-cpp
 
 COPY --from=builder /build/subconverter/subconverter /usr/bin/subconverter
 COPY --from=builder /src/base /base
+COPY --from=builder /locked-mihomo-helper/subconverter-mihomo-fetcher /usr/bin/subconverter-mihomo-fetcher
+COPY --from=builder /locked-mihomo-helper/subconverter-mihomo-fetcher.manifest.json /usr/share/subconverter/subconverter-mihomo-fetcher.manifest.json
 
-ENV TZ=Etc/UTC
+RUN test -x /usr/bin/subconverter-mihomo-fetcher; \
+    test -s /usr/share/subconverter/subconverter-mihomo-fetcher.manifest.json
+
+ENV SUBCONVERTER_MIHOMO_FETCHER_PATH=/usr/bin/subconverter-mihomo-fetcher \
+    SUBCONVERTER_MIHOMO_FETCHER_MANIFEST_PATH=/usr/share/subconverter/subconverter-mihomo-fetcher.manifest.json \
+    TZ=Etc/UTC
 WORKDIR /base
 
 EXPOSE 25500/tcp

@@ -1,0 +1,96 @@
+import re
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class MihomoHelperIdentityTests(unittest.TestCase):
+    def test_runtime_verifies_manifest_and_baked_binary_identity_before_spawn(self):
+        source = (ROOT / "src/handler/mihomo_fetch_client.cpp").read_text(encoding="utf-8")
+        validation = source.index("validateHelperIdentity(*helper, *manifest)")
+        spawn = source.index("process_.start(*helper)")
+        self.assertLess(validation, spawn)
+        for identity in (
+            "schema_version",
+            "pair_id",
+            "platform",
+            "helper_overlay_sha256",
+            "helper_protocol",
+            "parity_contract",
+            "SUBCONVERTER_MIHOMO_HELPER_SHA256",
+            "file_size(helper",
+            "sha256File(helper)",
+            "manifest_size > max_manifest_size",
+        ):
+            self.assertIn(identity, source)
+
+    def test_unbound_development_build_fails_closed(self):
+        source = (ROOT / "src/handler/mihomo_fetch_client.cpp").read_text(encoding="utf-8")
+        self.assertIn("expected_digest.empty()", source)
+        self.assertIn("expected_platform.empty()", source)
+        self.assertIn("expected_name.empty()", source)
+        template = (ROOT / "cmake/project_version.h.in").read_text(encoding="utf-8")
+        self.assertIn("SUBCONVERTER_MIHOMO_HELPER_SHA256", template)
+
+    def test_hello_checks_target_toolchain_and_exact_capabilities(self):
+        source = (ROOT / "src/handler/mihomo_fetch_client.cpp").read_text(encoding="utf-8")
+        for field in ("go_version", "goos", "goarch", "capabilities"):
+            self.assertIn('"{}"'.format(field), source)
+        capability_match = re.search(
+            r"static const std::set<std::string> expected = \{(.*?)\};",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(capability_match)
+        capabilities = set(re.findall(r'"([a-z0-9-]+)"', capability_match.group(1)))
+        self.assertEqual(
+            capabilities,
+            {
+                "direct",
+                "http-proxy",
+                "https-proxy",
+                "socks5-proxy",
+                "etag",
+                "raw-body",
+                "response-headers",
+            },
+        )
+        self.assertIn("value.size() != expected.size()", source)
+
+    def test_process_creation_uses_explicit_descriptor_and_handle_boundaries(self):
+        source = (ROOT / "src/handler/mihomo_fetch_client.cpp").read_text(encoding="utf-8")
+        self.assertIn("posix_spawn(", source)
+        self.assertNotIn("fork();", source)
+        self.assertNotIn("execl(", source)
+        self.assertIn("FD_CLOEXEC", source)
+        self.assertIn("SIGTERM", source)
+        self.assertIn("SIGKILL", source)
+        self.assertIn("PROC_THREAD_ATTRIBUTE_HANDLE_LIST", source)
+        self.assertIn("EXTENDED_STARTUPINFO_PRESENT", source)
+
+    def test_every_release_path_binds_the_pair_into_cmake(self):
+        for relative in (
+            "scripts/build.alpine.release.sh",
+            "scripts/build.macos.release.sh",
+            "scripts/build.windows.release.sh",
+        ):
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            for argument in (
+                "SUBCONVERTER_MIHOMO_FETCHER_BINARY",
+                "SUBCONVERTER_MIHOMO_FETCHER_MANIFEST",
+                "SUBCONVERTER_MIHOMO_FETCHER_PLATFORM",
+            ):
+                self.assertIn("-D{}=".format(argument), source, relative)
+
+        dockerfile = (ROOT / "scripts/Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY --from=mihomo-fetcher-builder", dockerfile)
+        self.assertIn("-DSUBCONVERTER_MIHOMO_FETCHER_BINARY=", dockerfile)
+        self.assertIn("-DSUBCONVERTER_MIHOMO_FETCHER_MANIFEST=", dockerfile)
+        self.assertIn("-DSUBCONVERTER_MIHOMO_FETCHER_PLATFORM=", dockerfile)
+        self.assertIn("SUBCONVERTER_MIHOMO_FETCHER_MANIFEST_PATH=", dockerfile)
+
+
+if __name__ == "__main__":
+    unittest.main()
