@@ -13,9 +13,9 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertIn("请修改模板，不要直接编辑 README.md", readme)
         self.assertNotIn("## README 如何维护", readme)
 
-    def test_reader_journey_is_bilingual_and_project_specific(self):
+    def test_only_main_title_is_bilingual(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        introduction = readme[: readme.index("## 🚀 部署方法 / Deployment")]
+        introduction = readme[: readme.index("## 🚀 部署方法")]
         for value in (
             "最大限度减少原版 subconverter",
             "向订阅服务商暴露的请求特征",
@@ -26,14 +26,14 @@ class ReadmeContractTests(unittest.TestCase):
             self.assertIn(value, introduction)
 
         sections = (
-            "## 🎯 项目定位 / Positioning",
-            "## 🔍 与上游的详细区别 / Differences from Upstream",
-            "## 🚀 部署方法 / Deployment",
-            "## ⚙️ 仓库运行逻辑 / Repository Workflow",
-            "## 🛡️ 能力边界 / Limitations",
-            "## 🔄 更新 / Updates",
-            "## ❓ 常见问题 / FAQ",
-            "🔎 可验证身份 / Verifiable Identity",
+            "## 🎯 项目定位",
+            "## 🔍 与上游的详细区别",
+            "## 🚀 部署方法",
+            "## ⚙️ 仓库运行逻辑",
+            "## 🛡️ 能力边界",
+            "## 🔄 更新",
+            "## ❓ 常见问题",
+            "🔎 可验证身份",
         )
         positions = [readme.index(section) for section in sections]
         self.assertEqual(positions, sorted(positions))
@@ -42,6 +42,11 @@ class ReadmeContractTests(unittest.TestCase):
             '<h1 align="center">subconverter 隐匿特征版 / Anti-Fingerprint Edition</h1>',
             readme,
         )
+        self.assertNotRegex(readme, r"(?m)^#{2,6} .+ / .+$")
+        self.assertNotRegex(readme, r"<summary>[^\n]* / [^\n]*</summary>")
+        self.assertNotRegex(readme, r"\[[^\]]+ / [^\]]+\]\(")
+        self.assertNotIn("项目定位 / Positioning", readme)
+        self.assertNotIn("完整 Wiki / Full Wiki", readme)
         self.assertIn("docker compose up -d", readme)
         self.assertIn("```mermaid", readme)
         self.assertIn("https://github.com/Aethersailor/subconverter/wiki", readme)
@@ -79,7 +84,7 @@ class ReadmeContractTests(unittest.TestCase):
             "原生程序：[GitHub Releases]",
         ):
             self.assertNotIn(value, readme)
-        self.assertIn("## 📦 镜像与平台 / Images & Platforms", readme)
+        self.assertIn("## 📦 镜像与平台", readme)
         self.assertIn("docker.io/aethersailor/subconverter:latest", readme)
         self.assertIn("ghcr.io/aethersailor/subconverter:latest", readme)
 
