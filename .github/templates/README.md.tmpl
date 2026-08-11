@@ -35,6 +35,18 @@
 
 它适合仍需由服务端完成传统订阅拉取和转换、又希望降低请求特征暴露的用户。已经在使用普通 subconverter 的部署通常只需替换镜像，无需改变订阅链接和客户端用法。
 
+本项目的上游源码来自 [`{{UPSTREAM_REPOSITORY}}`](https://github.com/{{UPSTREAM_REPOSITORY}})。仓库自动跟踪并同步上游 `{{UPSTREAM_BRANCH}}` 分支，在此基础上完成请求特征隐匿化改造、验证和 Docker 镜像发布。除自动同步、构建验证和镜像发布所需的工程适配外，本项目不做与隐匿化目标无关的功能修改。
+
+### 当前同步基线
+
+| 信息 | 当前值 |
+| --- | --- |
+| 上游版本 | `{{UPSTREAM_VERSION}}` |
+| 上游提交短 ID | [`{{UPSTREAM_COMMIT_SHORT}}`](https://github.com/{{UPSTREAM_REPOSITORY}}/commit/{{UPSTREAM_COMMIT}}) |
+| Mihomo 稳定版 | [`{{MIHOMO_TAG}}`]({{MIHOMO_RELEASE_URL}}) |
+
+表格由源码锁自动生成，并随通过验证的上游或 Mihomo 更新同步刷新。
+
 > [!TIP]
 > 如果希望从架构上完全避免**订阅转换后端访问远程订阅服务商**，建议使用 [Aethersailor/SubConverter-Extended](https://github.com/Aethersailor/SubConverter-Extended)。它会生成 `proxy-provider`，由用户客户端中的 Mihomo 内核直接拉取订阅，转换后端不再连接远程订阅服务器。
 
@@ -247,15 +259,9 @@ curl --fail http://127.0.0.1:25500/version
 
 更多说明见 Wiki 的[常见问题](https://github.com/Aethersailor/subconverter/wiki/FAQ)。
 
-<a id="versions"></a>
+<a id="identity"></a>
 
-## 🧩 当前版本
-
-| 组件 | 当前构建基线 |
-| --- | --- |
-| subconverter 上游 | `{{UPSTREAM_VERSION}}` · [`{{UPSTREAM_COMMIT_SHORT}}`](https://github.com/{{UPSTREAM_REPOSITORY}}/commit/{{UPSTREAM_COMMIT}}) |
-| Mihomo 稳定版 | [`{{MIHOMO_TAG}}`]({{MIHOMO_RELEASE_URL}}) · [`{{MIHOMO_COMMIT_SHORT}}`](https://github.com/{{MIHOMO_REPOSITORY}}/commit/{{MIHOMO_COMMIT}}) |
-| 上游同步时间 | `{{UPSTREAM_SYNCED_AT}}` |
+## 🧩 构建身份
 
 <details>
 <summary><strong>🔎 可验证身份</strong></summary>
@@ -265,6 +271,7 @@ curl --fail http://127.0.0.1:25500/version
 | 上游仓库与分支 | [`{{UPSTREAM_REPOSITORY}}`](https://github.com/{{UPSTREAM_REPOSITORY}}) / `{{UPSTREAM_BRANCH}}` |
 | 上游完整提交 | `{{UPSTREAM_COMMIT}}` |
 | Mihomo 完整提交 | `{{MIHOMO_COMMIT}}` |
+| 上游同步时间 | `{{UPSTREAM_SYNCED_AT}}` |
 | 源码配对 ID | `{{MIHOMO_PAIR_ID}}` |
 | 模仿契约 | `{{MIHOMO_PARITY_CONTRACT}}`（helper protocol `{{MIHOMO_HELPER_PROTOCOL}}`） |
 | 项目版本后缀 | `{{EDITION}}` |

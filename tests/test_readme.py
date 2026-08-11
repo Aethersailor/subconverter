@@ -1,3 +1,4 @@
+import json
 import re
 import unittest
 from pathlib import Path
@@ -50,6 +51,47 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertIn("docker compose up -d", readme)
         self.assertIn("```mermaid", readme)
         self.assertIn("https://github.com/Aethersailor/subconverter/wiki", readme)
+
+    def test_positioning_identifies_upstream_and_generated_sync_baseline(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        template = (ROOT / ".github" / "templates" / "README.md.tmpl").read_text(
+            encoding="utf-8"
+        )
+        metadata = json.loads(
+            (ROOT / ".github" / "project-metadata.json").read_text(encoding="utf-8")
+        )
+        source_lock = json.loads(
+            (ROOT / ".github" / "source-lock.json").read_text(encoding="utf-8")
+        )
+        positioning = readme[
+            readme.index("## 🎯 项目定位") : readme.index("## 🔍 与上游的详细区别")
+        ]
+
+        for value in (
+            metadata["upstream_repository"],
+            "仓库自动跟踪并同步上游",
+            "本项目不做与隐匿化目标无关的功能修改",
+            "### 当前同步基线",
+            metadata["upstream_version"],
+            metadata["upstream_commit"][:8],
+            source_lock["mihomo"]["tag"],
+            "表格由源码锁自动生成",
+        ):
+            self.assertIn(value, positioning)
+
+        for placeholder in (
+            "{{UPSTREAM_REPOSITORY}}",
+            "{{UPSTREAM_VERSION}}",
+            "{{UPSTREAM_COMMIT_SHORT}}",
+            "{{MIHOMO_TAG}}",
+        ):
+            self.assertIn(placeholder, template)
+
+        self.assertEqual(template.count("{{UPSTREAM_VERSION}}"), 1)
+        self.assertEqual(template.count("{{UPSTREAM_COMMIT_SHORT}}"), 1)
+        self.assertEqual(template.count("{{MIHOMO_TAG}}"), 1)
+        self.assertNotIn("## 🧩 当前版本", readme)
+        self.assertIn("## 🧩 构建身份", readme)
 
     def test_generic_upstream_usage_is_not_duplicated(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

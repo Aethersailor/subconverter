@@ -35,6 +35,18 @@
 
 它适合仍需由服务端完成传统订阅拉取和转换、又希望降低请求特征暴露的用户。已经在使用普通 subconverter 的部署通常只需替换镜像，无需改变订阅链接和客户端用法。
 
+本项目的上游源码来自 [`asdlokj1qpi233/subconverter`](https://github.com/asdlokj1qpi233/subconverter)。仓库自动跟踪并同步上游 `master` 分支，在此基础上完成请求特征隐匿化改造、验证和 Docker 镜像发布。除自动同步、构建验证和镜像发布所需的工程适配外，本项目不做与隐匿化目标无关的功能修改。
+
+### 当前同步基线
+
+| 信息 | 当前值 |
+| --- | --- |
+| 上游版本 | `v0.9.9` |
+| 上游提交短 ID | [`6e94f496`](https://github.com/asdlokj1qpi233/subconverter/commit/6e94f496d1e170282321119214de08e3826fa24f) |
+| Mihomo 稳定版 | [`v1.19.29`](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.29) |
+
+表格由源码锁自动生成，并随通过验证的上游或 Mihomo 更新同步刷新。
+
 > [!TIP]
 > 如果希望从架构上完全避免**订阅转换后端访问远程订阅服务商**，建议使用 [Aethersailor/SubConverter-Extended](https://github.com/Aethersailor/SubConverter-Extended)。它会生成 `proxy-provider`，由用户客户端中的 Mihomo 内核直接拉取订阅，转换后端不再连接远程订阅服务器。
 
@@ -247,15 +259,9 @@ curl --fail http://127.0.0.1:25500/version
 
 更多说明见 Wiki 的[常见问题](https://github.com/Aethersailor/subconverter/wiki/FAQ)。
 
-<a id="versions"></a>
+<a id="identity"></a>
 
-## 🧩 当前版本
-
-| 组件 | 当前构建基线 |
-| --- | --- |
-| subconverter 上游 | `v0.9.9` · [`6e94f496`](https://github.com/asdlokj1qpi233/subconverter/commit/6e94f496d1e170282321119214de08e3826fa24f) |
-| Mihomo 稳定版 | [`v1.19.29`](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.29) · [`e26714a1`](https://github.com/MetaCubeX/mihomo/commit/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb) |
-| 上游同步时间 | `2026-07-10T06:25:11+00:00` |
+## 🧩 构建身份
 
 <details>
 <summary><strong>🔎 可验证身份</strong></summary>
@@ -265,6 +271,7 @@ curl --fail http://127.0.0.1:25500/version
 | 上游仓库与分支 | [`asdlokj1qpi233/subconverter`](https://github.com/asdlokj1qpi233/subconverter) / `master` |
 | 上游完整提交 | `6e94f496d1e170282321119214de08e3826fa24f` |
 | Mihomo 完整提交 | `e26714a181ac0e2fa803453c0a8e9a9ce94e31cb` |
+| 上游同步时间 | `2026-07-10T06:25:11+00:00` |
 | 源码配对 ID | `sha256:44fb36d28ffb0d4c228f23b51e038ee592a44fb66ac5a6058b41703f478a3444` |
 | 模仿契约 | `mihomo-provider-fetch-v1`（helper protocol `1`） |
 | 项目版本后缀 | `af` |
