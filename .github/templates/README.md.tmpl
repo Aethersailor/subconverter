@@ -4,10 +4,33 @@
 .github/source-lock.json 自动生成。请修改模板，不要直接编辑 README.md。
 -->
 
-# subconverter anti-fingerprint edition
+<h1 align="center">subconverter 隐匿特征版 / Anti-Fingerprint Edition</h1>
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/aethersailor/subconverter)](https://hub.docker.com/r/aethersailor/subconverter)
-[![Docker Build](https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml/badge.svg?branch=master)](https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml)
+<p align="center">
+  <strong>保留上游兼容性，最大限度模拟 Mihomo Provider 请求特征</strong><br>
+  <sub>Upstream-compatible · Mihomo-aligned · Docker-first</sub>
+</p>
+
+<p align="center">
+  <a href="https://hub.docker.com/r/aethersailor/subconverter"><img src="https://img.shields.io/docker/pulls/aethersailor/subconverter?style=flat-square&logo=docker&label=Docker%20Pulls" alt="Docker Pulls"></a>
+  <a href="https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml"><img src="https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml/badge.svg?branch=master" alt="Docker Build"></a>
+  <a href="https://github.com/Aethersailor/subconverter/wiki"><img src="https://img.shields.io/badge/Wiki-用户文档-2ea44f?style=flat-square&logo=github" alt="Wiki"></a>
+</p>
+
+<p align="center">
+  <a href="#positioning">项目定位 / Positioning</a> ·
+  <a href="#differences">上游差异 / Differences</a> ·
+  <a href="#deployment">部署 / Deployment</a> ·
+  <a href="#workflow">仓库运行逻辑 / Workflow</a> ·
+  <a href="#faq">常见问题 / FAQ</a> ·
+  <a href="https://github.com/Aethersailor/subconverter/wiki">完整 Wiki / Full Wiki</a>
+</p>
+
+---
+
+<a id="positioning"></a>
+
+## 🎯 项目定位 / Positioning
 
 本项目旨在最大限度减少原版 subconverter 主动拉取远程订阅时，向订阅服务商暴露的请求特征。在保留原有转换接口和使用方式的基础上，它将 subconverter 访问订阅地址时可被服务商观察到的 HTTP/TLS 等行为，尽可能对齐 Mihomo 内核的 Provider 访问特征，从而尽可能避免被识别为 subconverter 并遭到屏蔽。
 
@@ -16,36 +39,68 @@
 > [!TIP]
 > 如果希望从架构上完全避免**订阅转换后端访问远程订阅服务商**，建议使用 [Aethersailor/SubConverter-Extended](https://github.com/Aethersailor/SubConverter-Extended)。它会生成 `proxy-provider`，由用户客户端中的 Mihomo 内核直接拉取订阅，转换后端不再连接远程订阅服务器。
 
-## 快速部署
+### 如何选择 / Which Edition?
 
-### Docker Compose（推荐）
+| 需求 | 推荐项目 |
+| --- | --- |
+| 保留传统 subconverter 的服务端拉取与转换，同时尽量减少请求特征 | **本项目** |
+| 让转换后端不再访问远程订阅，由客户端 Mihomo 直接拉取 | [SubConverter-Extended](https://github.com/Aethersailor/SubConverter-Extended) |
 
-新建 `compose.yaml`：
+<a id="differences"></a>
 
-```yaml
-services:
-  subconverter:
-    image: docker.io/aethersailor/subconverter:latest
-    container_name: subconverter
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:25500:25500"
-```
+## 🔍 与上游的详细区别 / Differences from Upstream
 
-启动并检查版本：
+本项目不重复维护 subconverter 的通用接口和参数文档。订阅转换方法、支持格式和外部配置说明请直接查看[上游 README](https://github.com/{{UPSTREAM_REPOSITORY}}#readme)。
 
-```bash
-docker compose up -d
-curl --fail http://127.0.0.1:25500/version
-```
+| 对比项 | 上游行为 | 本项目行为 |
+| --- | --- | --- |
+| 机场订阅获取 | 使用原有 cURL 获取路径 | 只有显式标记为 `SubscriptionProvider` 的请求交给 Mihomo companion helper |
+| 请求实现 | subconverter 自身 HTTP 客户端 | 从锁定的 Mihomo 源码构建，并复用 Provider 获取实现 |
+| 请求特征 | 保留原版 subconverter 可观测特征 | 对照 Mihomo 的 HTTP 请求、请求头顺序与 TLS ClientHello；不是只替换一个 User-Agent 字符串 |
+| 入站请求头 | 依赖上游原有处理 | 客户端、CDN 和反向代理请求头不会原样发送给机场订阅地址 |
+| 旧指纹头 | 上游兼容行为 | 不发送 `SubConverter-Request`、`SubConverter-Version` 和 CORS `X-Requested-With` 指纹头 |
+| GET / HEAD | 上游默认行为 | 不再默认携带 JSON `Content-Type`；脚本显式设置的值保持不变 |
+| 其他远程资源 | 使用上游请求路径 | Generic 出站请求（规则、模板等）保持 subconverter 自身身份，不会全部模拟成 Mihomo |
+| 校验失败 | 不具备本项目的 helper 身份约束 | helper、manifest、源码锁或平台身份不一致时失败关闭，不会静默降级 |
+| 发布方式 | 由上游项目决定 | 自动同步源码并验证候选版本，仅公开 Docker Hub 与 GHCR 多架构镜像 |
 
-也可以使用 GHCR 镜像：
+> [!NOTE]
+> 本项目重点改变的是「转换后端访问机场订阅」这一段网络行为。对外接口、端口和主要配置方式继续保持上游兼容。
 
-```text
-ghcr.io/aethersailor/subconverter:latest
-```
+<a id="deployment"></a>
 
-### Docker 命令
+## 🚀 部署方法 / Deployment
+
+### Docker Compose（推荐 / Recommended）
+
+1. 新建 `compose.yaml`：
+
+   ```yaml
+   services:
+     subconverter:
+       image: docker.io/aethersailor/subconverter:latest
+       container_name: subconverter
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:25500:25500"
+   ```
+
+2. 启动容器：
+
+   ```bash
+   docker compose up -d
+   ```
+
+3. 检查服务版本：
+
+   ```bash
+   curl --fail http://127.0.0.1:25500/version
+   ```
+
+   请求成功并返回版本信息后，服务即可使用。
+
+<details>
+<summary><strong>使用 Docker 命令 / Docker Run</strong></summary>
 
 ```bash
 docker run -d \
@@ -55,73 +110,82 @@ docker run -d \
   docker.io/aethersailor/subconverter:latest
 ```
 
-示例默认只允许本机访问，适合搭配同机的 Nginx、Caddy 或 OpenResty。需要从局域网直接访问时，可把端口映射改为 `25500:25500`；不要在没有访问控制的情况下直接暴露到公网。
+</details>
 
-## 开始使用
-
-转换接口与普通 subconverter 相同：
+也可以把镜像地址替换为：
 
 ```text
-http://127.0.0.1:25500/sub?target=<目标格式>&url=<URL 编码后的机场订阅地址>
+ghcr.io/aethersailor/subconverter:latest
 ```
 
-例如，把一个示例订阅转换为 Clash 配置：
+> [!WARNING]
+> 示例默认只允许本机访问，适合搭配同机的 Nginx、Caddy 或 OpenResty。需要从局域网直接访问时，可把端口映射改为 `25500:25500`。不要在没有访问控制的情况下直接暴露到公网。
 
-```bash
-curl --get 'http://127.0.0.1:25500/sub' \
-  --data-urlencode 'target=clash' \
-  --data-urlencode 'url=https://example.com/subscribe?token=REPLACE_ME' \
-  --output config.yaml
+已有 subconverter 部署可以继续使用原有 `pref.ini`、外部配置和规则文件。镜像内的配置位置与上游保持一致；替换镜像时，请保留现有挂载和端口映射。
+
+完整部署、更新和日志边界见 Wiki 的[部署与更新 / Deployment & Updates](https://github.com/Aethersailor/subconverter/wiki/Deployment-and-Updates)。
+
+<a id="workflow"></a>
+
+## ⚙️ 仓库运行逻辑 / Repository Workflow
+
+```mermaid
+flowchart LR
+    A["定时或手动检查"] --> B["解析上游与 Mihomo 最新稳定版"]
+    B --> C["锁定源码与发布资产身份"]
+    C --> D["构建并验证候选版本"]
+    D --> E["Mihomo 请求特征对照"]
+    E --> F["更新 master 并发布 Docker 镜像"]
 ```
 
-上面的 `curl` 适合测试；日常使用时，可以把完整的 `/sub?...` 地址直接添加为客户端订阅。
+自动化按以下顺序运行：
 
-常用目标格式：
+1. 获取 subconverter 上游 `master` 和 Mihomo 最新稳定 Release 的真实提交、源码树和发布资产摘要。
+2. 生成统一的 `.github/source-lock.json`，把上游源码、Mihomo 源码和项目适配层绑定为一个配对身份。
+3. 为 Linux、Windows 和 macOS 的八个目标执行原生构建验证；这些构建用于验证兼容性，不作为公开下载内容。
+4. 构建 Docker 候选镜像，并验证真实的机场订阅获取路径。
+5. 使用锁定的官方 Mihomo 程序对照 HTTP/1.1 请求和 TLS ClientHello。只忽略端口、随机数、会话 ID 和临时密钥等逐连接变化的数据。
+6. 所有检查通过后，才更新 `master` 并发布 Docker Hub、GHCR 多架构镜像。任一步失败都不会发布候选镜像。
 
-| 客户端或格式 | `target` |
+没有发现上游或 Mihomo 变化时，自动化不会创建同步提交，也不会重复发布镜像。README 中的当前版本信息由源码锁自动生成，不需要人工维护第二份版本号。
+
+### 运行时请求边界 / Runtime Request Boundary
+
+```mermaid
+flowchart LR
+    A["客户端<br/>Client"] -->|"访问转换服务"| B["subconverter"]
+    B -->|"Mihomo Provider 请求特征"| C["订阅服务商<br/>Subscription Provider"]
+```
+
+| 请求类型 | 处理方式 |
 | --- | --- |
-| Clash / Mihomo | `clash` |
-| sing-box | `singbox` |
-| Surge | `surge`，并通过 `ver=2` 至 `ver=5` 选择版本 |
-| Quantumult X | `quanx` |
-| Loon | `loon` |
-| V2Ray | `v2ray` |
-| Shadowsocks / SSR | `ss` / `ssr` |
+| 机场原始订阅 | 使用 Mihomo Provider 获取行为 |
+| 规则、模板等普通下载 | 保持 subconverter 自身身份 |
+| 对外转换接口 | 保持上游兼容用法 |
 
-需要合并多个订阅时，先用 `|` 连接多个地址，再把整个 `url` 参数进行 URL 编码。高级参数、外部配置和完整格式列表请查看[上游使用文档](https://github.com/{{UPSTREAM_REPOSITORY}}#readme)。
+更多说明见 Wiki 的[仓库运行逻辑 / Repository Workflow](https://github.com/Aethersailor/subconverter/wiki/Repository-Workflow)。
 
-## 这版解决什么问题
+<a id="limitations"></a>
 
-一次转换包含两段不同的通信：
+## 🛡️ 能力边界 / Limitations
 
-```text
-你的客户端  →  subconverter  →  机场订阅服务商
-              正常转换服务       模拟 Mihomo Provider 获取行为
-```
+> [!IMPORTANT]
+> 本项目减少的是应用层请求特征，不承诺让访问绝对不可识别。
 
-本项目只优化右侧这段“subconverter 获取机场原始订阅”的行为：
-
-- 使用当前锁定的 Mihomo 最新稳定版 Provider 获取实现，而不是简单修改 User-Agent；
-- 对齐可观测的 HTTP 请求、请求头顺序、TLS ClientHello、重定向、ETag 和代理访问行为；
-- 不把客户端、CDN 或反向代理传来的请求头继续转发给机场；
-- 身份或组件校验失败时直接让该次获取失败，不会悄悄退回普通 cURL 请求。
-
-订阅转换功能、`/sub` 接口、规则和模板下载方式仍与上游保持一致。
-
-## 它不能隐藏什么
-
-本项目减少的是应用层请求特征，不承诺让访问“绝对不可识别”。机场仍可能观察到：
+订阅服务商仍可能观察到：
 
 - 服务器出口 IP 和网络路径；
-- 请求时间、频率以及订阅内容；
+- 请求时间、频率和订阅内容；
 - 账号本身的使用模式；
 - 外层 CDN、WAF、反向代理和访问日志留下的信息。
 
-如果你通过反向代理提供服务，还应阅读[隐私部署说明](docs/PRIVACY.md)，避免完整订阅 URL 和 Token 被写入日志。
+使用反向代理时，请阅读[隐私部署说明](docs/PRIVACY.md)，避免完整订阅 URL 和 Token 被写入日志。
 
-## 更新
+<a id="updates"></a>
 
-Compose 部署可直接执行：
+## 🔄 更新 / Updates
+
+Compose 部署执行以下命令：
 
 ```bash
 docker compose pull
@@ -129,39 +193,64 @@ docker compose up -d
 curl --fail http://127.0.0.1:25500/version
 ```
 
-仓库会自动检查 subconverter 上游源码和 Mihomo 最新稳定 Release。只有源码检查、原生构建验证和多架构镜像测试全部通过后，才会更新公开的 `latest` 镜像；预发布版不会被当作最新稳定版自动采用。
+前两条命令拉取并重建容器。最后一条命令用于确认更新后的服务能够返回版本信息。
 
 若希望固定版本，请记录并使用镜像 digest，不要仅依赖可变的 `latest` 标签。
 
-## 镜像与平台
+<a id="images"></a>
 
-- Docker Hub：`docker.io/aethersailor/subconverter:latest`
-- GitHub Container Registry：`ghcr.io/aethersailor/subconverter:latest`
-- Docker 架构：`linux/amd64`、`linux/386`、`linux/arm/v7`、`linux/arm64`
+## 📦 镜像与平台 / Images & Platforms
 
-## 常见问题
+| 项目 | 地址或范围 |
+| --- | --- |
+| Docker Hub | `docker.io/aethersailor/subconverter:latest` |
+| GitHub Container Registry | `ghcr.io/aethersailor/subconverter:latest` |
+| Docker 架构 | `linux/amd64`、`linux/386`、`linux/arm/v7`、`linux/arm64` |
 
-### 它会把所有请求都伪装成 Mihomo 吗？
+<a id="faq"></a>
 
-不会。只有访问机场原始订阅的链路使用 Mihomo Provider 行为。规则、模板等普通下载仍保持 subconverter 自己的身份，避免改变不相关功能。
+## ❓ 常见问题 / FAQ
 
-### 它是否始终跟随 Mihomo 最新版本？
+<details>
+<summary><strong>所有请求都会模拟成 Mihomo 吗？ / Does every request mimic Mihomo?</strong></summary>
 
-自动化会检查 Mihomo 最新稳定 Release，但不会在未经验证时直接更新。通过源码身份、协议行为、原生构建和镜像测试后才会发布，因此公开镜像对应的是“最新且已经通过本项目验证”的稳定版本。
+不会。只有访问机场原始订阅的请求使用 Mihomo Provider 行为。规则、模板等普通下载仍保持 subconverter 自身身份，避免改变不相关功能。
 
-### 可以保证机场百分之百无法识别吗？
+</details>
 
-不能。它尽可能缩小 Mihomo 与 subconverter 在 Provider 获取请求上的可观测差异，但无法隐藏出口 IP、访问时机、账号行为或机场服务端掌握的其他数据。
+<details>
+<summary><strong>会始终跟随 Mihomo 最新版本吗？ / Does it track the latest Mihomo?</strong></summary>
 
-### 能直接替换原来的 subconverter 吗？
+自动化会检查 Mihomo 最新稳定 Release，但不会在未经验证时直接更新。源码身份、协议行为、原生构建和镜像测试全部通过后，才会发布新的公开镜像。
 
-可以。接口、端口和主要配置方式保持上游兼容。使用自定义 `pref.ini`、外部配置或规则文件的部署，只需继续挂载原来的配置，并把镜像地址换成本项目镜像。
+</details>
 
-### 获取订阅失败时会退回普通请求吗？
+<details>
+<summary><strong>可以保证订阅服务商百分之百无法识别吗？ / Is detection impossible?</strong></summary>
+
+不能。本项目尽可能缩小 Mihomo 与 subconverter 在 Provider 获取请求上的可观测差异，但无法隐藏出口 IP、访问时机、账号行为或订阅服务商掌握的其他数据。
+
+</details>
+
+<details>
+<summary><strong>可以直接替换普通 subconverter 吗？ / Is it a drop-in replacement?</strong></summary>
+
+可以。接口、端口和主要配置方式保持上游兼容。使用自定义 `pref.ini`、外部配置或规则文件的部署，需要继续挂载原有配置，并把镜像地址换成本项目镜像。
+
+</details>
+
+<details>
+<summary><strong>获取订阅失败时会退回普通请求吗？ / Will it silently fall back?</strong></summary>
 
 不会。内置的 Mihomo 请求组件、平台或身份校验失败时会失败关闭，以免在用户不知情的情况下暴露普通 subconverter 请求特征。
 
-## 当前版本
+</details>
+
+更多说明见 Wiki 的[常见问题 / FAQ](https://github.com/Aethersailor/subconverter/wiki/FAQ)。
+
+<a id="versions"></a>
+
+## 🧩 当前版本 / Current Versions
 
 | 组件 | 当前构建基线 |
 | --- | --- |
@@ -170,9 +259,7 @@ curl --fail http://127.0.0.1:25500/version
 | 上游同步时间 | `{{UPSTREAM_SYNCED_AT}}` |
 
 <details>
-<summary>开发与审计信息</summary>
-
-内部只有显式标记为 `SubscriptionProvider` 的机场订阅获取请求会交给 companion helper；Generic 出站请求仍走上游 cURL 链路。它不是只替换一个 User-Agent 字符串，而是从锁定的 Mihomo 源码构建 helper，并复用 Mihomo 的 Provider 获取实现。
+<summary><strong>🔎 可验证身份 / Verifiable Identity</strong></summary>
 
 | 身份项 | 当前值 |
 | --- | --- |
@@ -198,7 +285,20 @@ docker exec subconverter cat /usr/share/subconverter/subconverter-mihomo-fetcher
 
 </details>
 
-## 相关项目
+<a id="documentation"></a>
 
-- subconverter 上游：[{{UPSTREAM_REPOSITORY}}](https://github.com/{{UPSTREAM_REPOSITORY}})
-- Mihomo：[MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo)
+## 📚 文档与相关项目 / Documentation & Related Projects
+
+- [项目 Wiki / Project Wiki](https://github.com/Aethersailor/subconverter/wiki)
+- [与上游的详细区别 / Differences from Upstream](https://github.com/Aethersailor/subconverter/wiki/Differences-from-Upstream)
+- [部署与更新 / Deployment & Updates](https://github.com/Aethersailor/subconverter/wiki/Deployment-and-Updates)
+- [仓库运行逻辑 / Repository Workflow](https://github.com/Aethersailor/subconverter/wiki/Repository-Workflow)
+- [subconverter 上游 / Upstream](https://github.com/{{UPSTREAM_REPOSITORY}})
+- [Mihomo](https://github.com/MetaCubeX/mihomo)
+
+---
+
+<p align="center">
+  <strong>subconverter 隐匿特征版 / Anti-Fingerprint Edition</strong><br>
+  <sub>Docker-first · Upstream-compatible · Mihomo-aligned</sub>
+</p>

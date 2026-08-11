@@ -13,9 +13,9 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertIn("请修改模板，不要直接编辑 README.md", readme)
         self.assertNotIn("## README 如何维护", readme)
 
-    def test_reader_journey_prioritizes_deployment_and_usage(self):
+    def test_reader_journey_is_bilingual_and_project_specific(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        introduction = readme[: readme.index("## 快速部署")]
+        introduction = readme[: readme.index("## 🚀 部署方法 / Deployment")]
         for value in (
             "最大限度减少原版 subconverter",
             "向订阅服务商暴露的请求特征",
@@ -24,19 +24,37 @@ class ReadmeContractTests(unittest.TestCase):
             "https://github.com/Aethersailor/SubConverter-Extended",
         ):
             self.assertIn(value, introduction)
+
         sections = (
-            "## 快速部署",
-            "## 开始使用",
-            "## 这版解决什么问题",
-            "## 更新",
-            "## 常见问题",
-            "<summary>开发与审计信息</summary>",
+            "## 🎯 项目定位 / Positioning",
+            "## 🔍 与上游的详细区别 / Differences from Upstream",
+            "## 🚀 部署方法 / Deployment",
+            "## ⚙️ 仓库运行逻辑 / Repository Workflow",
+            "## 🛡️ 能力边界 / Limitations",
+            "## 🔄 更新 / Updates",
+            "## ❓ 常见问题 / FAQ",
+            "🔎 可验证身份 / Verifiable Identity",
         )
         positions = [readme.index(section) for section in sections]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn("/sub?target=<目标格式>", readme)
+
+        self.assertIn(
+            '<h1 align="center">subconverter 隐匿特征版 / Anti-Fingerprint Edition</h1>',
+            readme,
+        )
         self.assertIn("docker compose up -d", readme)
-        self.assertIn("能直接替换原来的 subconverter 吗", readme)
+        self.assertIn("```mermaid", readme)
+        self.assertIn("https://github.com/Aethersailor/subconverter/wiki", readme)
+
+    def test_generic_upstream_usage_is_not_duplicated(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for value in (
+            "常用目标格式",
+            "--data-urlencode",
+            "/sub?target=<目标格式>",
+        ):
+            self.assertNotIn(value, readme)
+        self.assertIn("上游 README", readme)
 
     def test_local_links_exist(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -61,7 +79,7 @@ class ReadmeContractTests(unittest.TestCase):
             "原生程序：[GitHub Releases]",
         ):
             self.assertNotIn(value, readme)
-        self.assertIn("## 镜像与平台", readme)
+        self.assertIn("## 📦 镜像与平台 / Images & Platforms", readme)
         self.assertIn("docker.io/aethersailor/subconverter:latest", readme)
         self.assertIn("ghcr.io/aethersailor/subconverter:latest", readme)
 
