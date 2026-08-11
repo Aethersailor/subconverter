@@ -53,6 +53,18 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertIn("scripts/MIHOMO_FETCHER_PACKAGING.md", local_links)
         self.assertIn("scripts/mihomo_conformance/README.md", local_links)
 
+    def test_published_outputs_are_documented_as_docker_only(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for value in (
+            "img.shields.io/github/v/release/Aethersailor/subconverter",
+            "github.com/Aethersailor/subconverter/releases",
+            "原生程序：[GitHub Releases]",
+        ):
+            self.assertNotIn(value, readme)
+        self.assertIn("## 镜像与平台", readme)
+        self.assertIn("docker.io/aethersailor/subconverter:latest", readme)
+        self.assertIn("ghcr.io/aethersailor/subconverter:latest", readme)
+
     def test_documentation_workflow_covers_generated_sources(self):
         workflow = (ROOT / ".github" / "workflows" / "readme.yml").read_text(
             encoding="utf-8"

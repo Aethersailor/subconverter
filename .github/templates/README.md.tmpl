@@ -8,7 +8,6 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/aethersailor/subconverter)](https://hub.docker.com/r/aethersailor/subconverter)
 [![Docker Build](https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml/badge.svg?branch=master)](https://github.com/Aethersailor/subconverter/actions/workflows/docker.yml)
-[![Release](https://img.shields.io/github/v/release/Aethersailor/subconverter)](https://github.com/Aethersailor/subconverter/releases)
 
 本项目旨在最大限度减少原版 subconverter 主动拉取远程订阅时，向订阅服务商暴露的请求特征。在保留原有转换接口和使用方式的基础上，它将 subconverter 访问订阅地址时可被服务商观察到的 HTTP/TLS 等行为，尽可能对齐 Mihomo 内核的 Provider 访问特征，从而尽可能避免被识别为 subconverter 并遭到屏蔽。
 
@@ -130,17 +129,15 @@ docker compose up -d
 curl --fail http://127.0.0.1:25500/version
 ```
 
-仓库会自动检查 subconverter 上游源码和 Mihomo 最新稳定 Release。只有源码、原生程序和多架构镜像全部通过测试后，才会更新公开的 `latest` 镜像；预发布版不会被当作最新稳定版自动采用。
+仓库会自动检查 subconverter 上游源码和 Mihomo 最新稳定 Release。只有源码检查、原生构建验证和多架构镜像测试全部通过后，才会更新公开的 `latest` 镜像；预发布版不会被当作最新稳定版自动采用。
 
-若希望固定版本，请从 [Releases](https://github.com/Aethersailor/subconverter/releases) 选择版本标签，或使用镜像 digest，而不是跟随 `latest`。
+若希望固定版本，请记录并使用镜像 digest，不要仅依赖可变的 `latest` 标签。
 
-## 下载与平台
+## 镜像与平台
 
 - Docker Hub：`docker.io/aethersailor/subconverter:latest`
 - GitHub Container Registry：`ghcr.io/aethersailor/subconverter:latest`
-- 原生程序：[GitHub Releases](https://github.com/Aethersailor/subconverter/releases)
 - Docker 架构：`linux/amd64`、`linux/386`、`linux/arm/v7`、`linux/arm64`
-- 原生程序：Linux、Windows、macOS
 
 ## 常见问题
 
