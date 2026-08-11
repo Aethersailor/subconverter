@@ -30,7 +30,7 @@ class ProjectCustomizationTests(unittest.TestCase):
         actual = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertEqual(actual, expected)
 
-    def test_mihomo_readme_identity_comes_only_from_source_lock(self):
+    def test_mihomo_readme_version_comes_only_from_source_lock(self):
         metadata = PROJECT_METADATA.load_metadata()
         source_lock = PROJECT_METADATA.load_source_lock()
         self.assertNotIn("user_agent", metadata)
@@ -40,8 +40,8 @@ class ProjectCustomizationTests(unittest.TestCase):
         readme = PROJECT_METADATA.render(metadata, source_lock)
         mihomo = source_lock["mihomo"]
         self.assertIn(mihomo["tag"], readme)
-        self.assertIn(mihomo["tag_identity"]["commit"][:8], readme)
-        self.assertIn(source_lock["pair_id"], readme)
+        self.assertNotIn(mihomo["tag_identity"]["commit"], readme)
+        self.assertNotIn(source_lock["pair_id"], readme)
         self.assertIn("显式标记为 `SubscriptionProvider`", readme)
         self.assertIn("不是只替换一个 User-Agent 字符串", readme)
         self.assertIn("Generic 出站请求", readme)

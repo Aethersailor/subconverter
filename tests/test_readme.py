@@ -34,7 +34,7 @@ class ReadmeContractTests(unittest.TestCase):
             "## 🛡️ 能力边界",
             "## 🔄 更新",
             "## ❓ 常见问题",
-            "🔎 可验证身份",
+            "## 📚 文档与相关项目",
         )
         positions = [readme.index(section) for section in sections]
         self.assertEqual(positions, sorted(positions))
@@ -70,12 +70,13 @@ class ReadmeContractTests(unittest.TestCase):
         for value in (
             metadata["upstream_repository"],
             "仓库自动跟踪并同步上游",
-            "本项目不做与隐匿化目标无关的功能修改",
+            "本项目不增加与隐匿化目标无关的功能",
+            "其他改动仅用于自动同步、兼容性验证和镜像发布",
             "### 当前同步基线",
             metadata["upstream_version"],
             metadata["upstream_commit"][:8],
             source_lock["mihomo"]["tag"],
-            "表格由源码锁自动生成",
+            "实际同步源码以上游提交短 ID 为准",
         ):
             self.assertIn(value, positioning)
 
@@ -91,7 +92,23 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertEqual(template.count("{{UPSTREAM_COMMIT_SHORT}}"), 1)
         self.assertEqual(template.count("{{MIHOMO_TAG}}"), 1)
         self.assertNotIn("## 🧩 当前版本", readme)
-        self.assertIn("## 🧩 构建身份", readme)
+        self.assertNotIn("## 🧩 构建身份", readme)
+
+    def test_visible_readme_contains_no_maintainer_metadata(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        visible = re.sub(r"<!--.*?-->", "", readme, flags=re.DOTALL)
+        for value in (
+            "表格由源码锁自动生成",
+            ".github/source-lock.json",
+            "源码配对 ID",
+            "helper protocol",
+            "companion helper",
+            "manifest",
+            "mihomo-fetcher/PROTOCOL.md",
+            "MIHOMO_FETCHER_PACKAGING.md",
+            "scripts/mihomo_conformance/README.md",
+        ):
+            self.assertNotIn(value, visible)
 
     def test_generic_upstream_usage_is_not_duplicated(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -114,9 +131,6 @@ class ReadmeContractTests(unittest.TestCase):
             local_links.append(target)
             self.assertTrue((ROOT / target).exists(), target)
         self.assertIn("docs/PRIVACY.md", local_links)
-        self.assertIn("mihomo-fetcher/PROTOCOL.md", local_links)
-        self.assertIn("scripts/MIHOMO_FETCHER_PACKAGING.md", local_links)
-        self.assertIn("scripts/mihomo_conformance/README.md", local_links)
 
     def test_published_outputs_are_documented_as_docker_only(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

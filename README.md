@@ -35,7 +35,7 @@
 
 它适合仍需由服务端完成传统订阅拉取和转换、又希望降低请求特征暴露的用户。已经在使用普通 subconverter 的部署通常只需替换镜像，无需改变订阅链接和客户端用法。
 
-本项目的上游源码来自 [`asdlokj1qpi233/subconverter`](https://github.com/asdlokj1qpi233/subconverter)。仓库自动跟踪并同步上游 `master` 分支，在此基础上完成请求特征隐匿化改造、验证和 Docker 镜像发布。除自动同步、构建验证和镜像发布所需的工程适配外，本项目不做与隐匿化目标无关的功能修改。
+本项目的上游源码来自 [`asdlokj1qpi233/subconverter`](https://github.com/asdlokj1qpi233/subconverter)。仓库自动跟踪并同步上游 `master` 分支，在此基础上完成请求特征隐匿化改造、验证和 Docker 镜像发布。本项目不增加与隐匿化目标无关的功能；仓库中的其他改动仅用于自动同步、兼容性验证和镜像发布。
 
 ### 当前同步基线
 
@@ -45,7 +45,7 @@
 | 上游提交短 ID | [`6e94f496`](https://github.com/asdlokj1qpi233/subconverter/commit/6e94f496d1e170282321119214de08e3826fa24f) |
 | Mihomo 稳定版 | [`v1.19.29`](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.29) |
 
-表格由源码锁自动生成，并随通过验证的上游或 Mihomo 更新同步刷新。
+上游版本用于识别版本系列，实际同步源码以上游提交短 ID 为准。
 
 > [!TIP]
 > 如果希望从架构上完全避免**订阅转换后端访问远程订阅服务商**，建议使用 [Aethersailor/SubConverter-Extended](https://github.com/Aethersailor/SubConverter-Extended)。它会生成 `proxy-provider`，由用户客户端中的 Mihomo 内核直接拉取订阅，转换后端不再连接远程订阅服务器。
@@ -65,14 +65,14 @@
 
 | 对比项 | 上游行为 | 本项目行为 |
 | --- | --- | --- |
-| 机场订阅获取 | 使用原有 cURL 获取路径 | 只有显式标记为 `SubscriptionProvider` 的请求交给 Mihomo companion helper |
-| 请求实现 | subconverter 自身 HTTP 客户端 | 从锁定的 Mihomo 源码构建，并复用 Provider 获取实现 |
+| 机场订阅获取 | 使用原有 cURL 获取路径 | 只有显式标记为 `SubscriptionProvider` 的请求使用 Mihomo Provider 获取路径 |
+| 请求实现 | subconverter 自身 HTTP 客户端 | 使用当前同步的 Mihomo 稳定版所对应的 Provider 获取实现 |
 | 请求特征 | 保留原版 subconverter 可观测特征 | 对照 Mihomo 的 HTTP 请求、请求头顺序与 TLS ClientHello；不是只替换一个 User-Agent 字符串 |
 | 入站请求头 | 依赖上游原有处理 | 客户端、CDN 和反向代理请求头不会原样发送给机场订阅地址 |
 | 旧指纹头 | 上游兼容行为 | 不发送 `SubConverter-Request`、`SubConverter-Version` 和 CORS `X-Requested-With` 指纹头 |
 | GET / HEAD | 上游默认行为 | 不再默认携带 JSON `Content-Type`；脚本显式设置的值保持不变 |
 | 其他远程资源 | 使用上游请求路径 | Generic 出站请求（规则、模板等）保持 subconverter 自身身份，不会全部模拟成 Mihomo |
-| 校验失败 | 不具备本项目的 helper 身份约束 | helper、manifest、源码锁或平台身份不一致时失败关闭，不会静默降级 |
+| 校验失败 | 不具备本项目的组件与版本校验 | Mihomo 获取组件或版本校验失败时，本次订阅获取直接失败，不会静默降级 |
 | 发布方式 | 由上游项目决定 | 自动同步源码并验证候选版本，仅公开 Docker Hub 与 GHCR 多架构镜像 |
 
 > [!NOTE]
@@ -143,22 +143,22 @@ ghcr.io/aethersailor/subconverter:latest
 ```mermaid
 flowchart LR
     A["定时或手动检查"] --> B["解析上游与 Mihomo 最新稳定版"]
-    B --> C["锁定源码与发布资产身份"]
-    C --> D["构建并验证候选版本"]
+    B --> C["确认用于构建的版本"]
+    C --> D["构建并验证待发布版本"]
     D --> E["Mihomo 请求特征对照"]
     E --> F["更新 master 并发布 Docker 镜像"]
 ```
 
 自动化按以下顺序运行：
 
-1. 获取 subconverter 上游 `master` 和 Mihomo 最新稳定 Release 的真实提交、源码树和发布资产摘要。
-2. 生成统一的 `.github/source-lock.json`，把上游源码、Mihomo 源码和项目适配层绑定为一个配对身份。
-3. 为 Linux、Windows 和 macOS 的八个目标执行原生构建验证；这些构建用于验证兼容性，不作为公开下载内容。
-4. 构建 Docker 候选镜像，并验证真实的机场订阅获取路径。
-5. 使用锁定的官方 Mihomo 程序对照 HTTP/1.1 请求和 TLS ClientHello。只忽略端口、随机数、会话 ID 和临时密钥等逐连接变化的数据。
-6. 所有检查通过后，才更新 `master` 并发布 Docker Hub、GHCR 多架构镜像。任一步失败都不会发布候选镜像。
+1. 检查 subconverter 上游 `master` 和 Mihomo 最新稳定 Release 是否发生变化。
+2. 确认本次构建使用的上游提交和 Mihomo 版本。
+3. 验证 Linux、Windows 和 macOS 的构建兼容性；这些构建不作为公开下载内容。
+4. 启动待发布的 Docker 镜像，并测试真实的机场订阅获取路径。
+5. 使用对应版本的官方 Mihomo 对照 HTTP/1.1 请求和 TLS ClientHello。
+6. 所有检查通过后，才更新 `master` 并发布 Docker Hub、GHCR 多架构镜像。任一步失败都不会发布新镜像。
 
-没有发现上游或 Mihomo 变化时，自动化不会创建同步提交，也不会重复发布镜像。README 中的当前版本信息由源码锁自动生成，不需要人工维护第二份版本号。
+没有发现上游或 Mihomo 变化时，仓库不会重复发布镜像。检测到变化但验证失败时，用户继续获得上一个通过验证的版本。
 
 ### 运行时请求边界
 
@@ -232,7 +232,7 @@ curl --fail http://127.0.0.1:25500/version
 <details>
 <summary><strong>会始终跟随 Mihomo 最新版本吗？</strong></summary>
 
-自动化会检查 Mihomo 最新稳定 Release，但不会在未经验证时直接更新。源码身份、协议行为、原生构建和镜像测试全部通过后，才会发布新的公开镜像。
+自动化会检查 Mihomo 最新稳定 Release，但不会在未经验证时直接更新。版本、请求行为、跨平台兼容性和镜像测试全部通过后，才会发布新的公开镜像。
 
 </details>
 
@@ -253,43 +253,11 @@ curl --fail http://127.0.0.1:25500/version
 <details>
 <summary><strong>获取订阅失败时会退回普通请求吗？</strong></summary>
 
-不会。内置的 Mihomo 请求组件、平台或身份校验失败时会失败关闭，以免在用户不知情的情况下暴露普通 subconverter 请求特征。
+不会。Mihomo 获取组件或版本校验失败时，本次订阅获取会直接失败，以免在用户不知情的情况下暴露普通 subconverter 请求特征。
 
 </details>
 
 更多说明见 Wiki 的[常见问题](https://github.com/Aethersailor/subconverter/wiki/FAQ)。
-
-<a id="identity"></a>
-
-## 🧩 构建身份
-
-<details>
-<summary><strong>🔎 可验证身份</strong></summary>
-
-| 身份项 | 当前值 |
-| --- | --- |
-| 上游仓库与分支 | [`asdlokj1qpi233/subconverter`](https://github.com/asdlokj1qpi233/subconverter) / `master` |
-| 上游完整提交 | `6e94f496d1e170282321119214de08e3826fa24f` |
-| Mihomo 完整提交 | `e26714a181ac0e2fa803453c0a8e9a9ce94e31cb` |
-| 上游同步时间 | `2026-07-10T06:25:11+00:00` |
-| 源码配对 ID | `sha256:44fb36d28ffb0d4c228f23b51e038ee592a44fb66ac5a6058b41703f478a3444` |
-| 模仿契约 | `mihomo-provider-fetch-v1`（helper protocol `1`） |
-| 项目版本后缀 | `af` |
-
-进一步资料：
-
-- [helper IPC 与安全协议](mihomo-fetcher/PROTOCOL.md)
-- [锁定构建与多平台打包契约](scripts/MIHOMO_FETCHER_PACKAGING.md)
-- [一致性捕获和差异判定](scripts/mihomo_conformance/README.md)
-
-运行时可以核对容器中的 helper 和 manifest：
-
-```bash
-docker exec subconverter sha256sum /usr/bin/subconverter-mihomo-fetcher
-docker exec subconverter cat /usr/share/subconverter/subconverter-mihomo-fetcher.manifest.json
-```
-
-</details>
 
 <a id="documentation"></a>
 
