@@ -95,7 +95,8 @@ class ProjectCustomizationTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("GH_REPO: ${{ github.repository }}", workflow)
-        self.assertIn('gh api "repos/$GITHUB_REPOSITORY"', workflow)
+        self.assertIn('"repos/$GITHUB_REPOSITORY"', workflow)
+        self.assertIn("python3 scripts/retry_gh_api.py --", workflow)
         self.assertIn('if [[ "$repo_has_issues" != "true" ]]', workflow)
         self.assertNotIn(
             "needs.publish.result == 'success' &&\n"
@@ -108,6 +109,30 @@ class ProjectCustomizationTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("            .gitattributes\n", workflow)
+
+    def test_github_api_reads_use_the_shared_retry_boundary(self):
+        expected_uses = {
+            "auto_sync.yml": 2,
+            "build.yml": 1,
+            "docker.yml": 1,
+        }
+        for name, expected_count in expected_uses.items():
+            with self.subTest(workflow=name):
+                workflow = (
+                    ROOT / ".github" / "workflows" / name
+                ).read_text(encoding="utf-8")
+                self.assertEqual(
+                    workflow.count("python3 scripts/retry_gh_api.py --"),
+                    expected_count,
+                )
+                self.assertNotIn("gh api ", workflow)
+
+        sync_workflow = (
+            ROOT / ".github" / "workflows" / "auto_sync.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("- name: Checkout workflow utilities", sync_workflow)
+        self.assertIn("            scripts/retry_gh_api.py\n", sync_workflow)
+        self.assertIn("            tests/test_retry_gh_api.py\n", sync_workflow)
 
     def test_windows_build_patches_pinned_yaml_cpp_for_current_compilers(self):
         script = (ROOT / "scripts" / "build.windows.release.sh").read_text(

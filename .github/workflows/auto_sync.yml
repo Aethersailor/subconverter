@@ -79,10 +79,13 @@ jobs:
             local path="$1"
             local response
             response="$(mktemp "$RUNNER_TEMP/source-lock-response.XXXXXX")"
-            gh api \
+            if ! python3 scripts/retry_gh_api.py -- \
               -H 'Accept: application/vnd.github+json' \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "$path" > "$response"
+              "$path" > "$response"; then
+              rm -f "$response"
+              return 1
+            fi
             jq \
               --arg key "/$path" \
               --slurpfile payload "$response" \
@@ -228,6 +231,7 @@ jobs:
             scripts/MIHOMO_FETCHER_PACKAGING.md
             scripts/package_mihomo_fetcher.py
             scripts/project_metadata.py
+            scripts/retry_gh_api.py
             scripts/resolve_source_lock.py
             scripts/test_mihomo_oracle_parity.py
             scripts/test_outbound_headers.py
@@ -253,6 +257,7 @@ jobs:
             tests/test_mihomo_oracle_parity.py
             tests/test_package_mihomo_fetcher.py
             tests/test_project_customization.py
+            tests/test_retry_gh_api.py
             tests/test_source_lock.py
             .dockerignore
           )
@@ -536,6 +541,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout workflow utilities
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
       - name: Update synchronization issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -580,7 +590,11 @@ jobs:
             echo "- Run: $RUN_URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          repo_has_issues="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.has_issues')"
+          repo_has_issues="$(
+            python3 scripts/retry_gh_api.py -- \
+              "repos/$GITHUB_REPOSITORY" \
+              --jq '.has_issues'
+          )"
           if [[ "$repo_has_issues" != "true" ]]; then
             echo "Issues are disabled; the workflow summary is the failure report." >> "$GITHUB_STEP_SUMMARY"
             exit 0
