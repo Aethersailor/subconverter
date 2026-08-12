@@ -144,6 +144,14 @@ class ProjectCustomizationTests(unittest.TestCase):
             "0002-rapidjson-disable-string-ref-assignment.patch", script
         )
 
+    def test_docker_helper_packaging_runs_on_the_native_build_platform(self):
+        dockerfile = (ROOT / "scripts" / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn(
+            "FROM --platform=$BUILDPLATFORM alpine:3.22 AS mihomo-fetcher-builder",
+            dockerfile,
+        )
+        self.assertNotIn("FROM --platform=linux/amd64", dockerfile)
+
     def test_native_cache_action_uses_node24_release(self):
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
             encoding="utf-8"

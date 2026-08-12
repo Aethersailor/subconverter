@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 alpine:3.22 AS mihomo-fetcher-builder
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS mihomo-fetcher-builder
 
 ARG TARGETOS
 ARG TARGETARCH
