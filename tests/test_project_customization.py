@@ -144,6 +144,19 @@ class ProjectCustomizationTests(unittest.TestCase):
             "0002-rapidjson-disable-string-ref-assignment.patch", script
         )
 
+    def test_native_cache_action_uses_node24_release(self):
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
+            workflow,
+        )
+        self.assertNotIn(
+            "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            workflow,
+        )
+
     def test_docker_registry_digests_are_kept_separate(self):
         workflow = (ROOT / ".github" / "workflows" / "docker.yml").read_text(
             encoding="utf-8"
