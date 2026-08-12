@@ -385,8 +385,6 @@ jobs:
       version: ${{ needs.sync.outputs.version }}
       push: false
       run_smoke: true
-      publish_latest: false
-      publish_stable: false
     secrets: inherit
 
   promote:
@@ -429,8 +427,6 @@ jobs:
       version: ${{ needs.sync.outputs.version }}
       push: true
       run_smoke: false
-      publish_latest: true
-      publish_stable: ${{ needs.sync.outputs.release_needed == 'true' }}
     secrets: inherit
 
   release:

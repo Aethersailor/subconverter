@@ -168,8 +168,19 @@ class ProjectCustomizationTests(unittest.TestCase):
             "image-digest-ghcr-*",
             "needs.build.result == 'success'",
             "Manifest publication did not succeed",
+            'docker buildx imagetools create -t "$IMAGE:latest"',
+            "scripts/cleanup_container_registry.py dockerhub",
+            "scripts/cleanup_container_registry.py ghcr",
         ):
             self.assertIn(value, workflow)
+        self.assertEqual(workflow.count("          provenance: false\n"), 2)
+        for obsolete_alias in (
+            '"$IMAGE:$VERSION"',
+            '"$IMAGE:sha-$PROJECT_COMMIT_SHORT"',
+            '"$IMAGE:edge"',
+            '"$IMAGE:stable"',
+        ):
+            self.assertNotIn(obsolete_alias, workflow)
 
 
 if __name__ == "__main__":

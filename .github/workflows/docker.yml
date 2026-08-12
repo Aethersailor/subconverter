@@ -21,16 +21,6 @@ on:
         required: false
         default: true
         type: boolean
-      publish_latest:
-        description: Publish latest and edge aliases
-        required: false
-        default: false
-        type: boolean
-      publish_stable:
-        description: Publish stable alias
-        required: false
-        default: false
-        type: boolean
   workflow_dispatch:
     inputs:
       ref:
@@ -46,16 +36,6 @@ on:
         description: Run the outbound-header smoke test (always enforced before publishing)
         required: true
         default: true
-        type: boolean
-      publish_latest:
-        description: Publish latest and edge aliases
-        required: true
-        default: false
-        type: boolean
-      publish_stable:
-        description: Publish stable alias
-        required: true
-        default: false
         type: boolean
   push:
     branches: [master]
@@ -87,11 +67,8 @@ jobs:
     outputs:
       version: ${{ steps.metadata.outputs.version }}
       project_commit: ${{ steps.metadata.outputs.project_commit }}
-      project_commit_short: ${{ steps.metadata.outputs.project_commit_short }}
       upstream_commit: ${{ steps.metadata.outputs.upstream_commit }}
       should_push: ${{ steps.metadata.outputs.should_push }}
-      publish_latest: ${{ steps.metadata.outputs.publish_latest }}
-      publish_stable: ${{ steps.metadata.outputs.publish_stable }}
       run_smoke: ${{ steps.metadata.outputs.run_smoke }}
     steps:
       - name: Checkout source
@@ -187,14 +164,11 @@ jobs:
         env:
           EXPECTED_VERSION: ${{ inputs.version }}
           INPUT_PUSH: ${{ inputs.push }}
-          INPUT_LATEST: ${{ inputs.publish_latest }}
-          INPUT_STABLE: ${{ inputs.publish_stable }}
           INPUT_SMOKE: ${{ inputs.run_smoke }}
         shell: bash
         run: |
           set -euo pipefail
           project_commit="$(git rev-parse HEAD)"
-          project_commit_short="$(git rev-parse --short=8 HEAD)"
           version="$(python3 scripts/project_metadata.py version --project-commit "$project_commit")"
           upstream_commit="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_commit"])')"
           python3 scripts/project_metadata.py render --check
@@ -205,13 +179,9 @@ jobs:
           fi
 
           should_push="$INPUT_PUSH"
-          publish_latest="$INPUT_LATEST"
-          publish_stable="$INPUT_STABLE"
           run_smoke="${INPUT_SMOKE:-true}"
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             should_push=true
-            publish_latest=true
-            publish_stable=false
             run_smoke=true
           fi
           if [[ "$should_push" == "true" ]]; then
@@ -220,11 +190,8 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "project_commit=$project_commit" >> "$GITHUB_OUTPUT"
-          echo "project_commit_short=$project_commit_short" >> "$GITHUB_OUTPUT"
           echo "upstream_commit=$upstream_commit" >> "$GITHUB_OUTPUT"
           echo "should_push=$should_push" >> "$GITHUB_OUTPUT"
-          echo "publish_latest=$publish_latest" >> "$GITHUB_OUTPUT"
-          echo "publish_stable=$publish_stable" >> "$GITHUB_OUTPUT"
           echo "run_smoke=$run_smoke" >> "$GITHUB_OUTPUT"
 
       - name: Run Python tests
@@ -414,6 +381,7 @@ jobs:
             PROJECT_COMMIT=${{ needs.prepare.outputs.project_commit }}
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             UPSTREAM_COMMIT=${{ needs.prepare.outputs.upstream_commit }}
+          provenance: false
           outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Build and push GHCR image by digest
@@ -427,6 +395,7 @@ jobs:
             PROJECT_COMMIT=${{ needs.prepare.outputs.project_commit }}
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             UPSTREAM_COMMIT=${{ needs.prepare.outputs.upstream_commit }}
+          provenance: false
           outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export registry digests
@@ -468,10 +437,18 @@ jobs:
         include:
           - image: aethersailor/subconverter
             digest_pattern: image-digest-dockerhub-*
+            registry: dockerhub
           - image: ghcr.io/aethersailor/subconverter
             digest_pattern: image-digest-ghcr-*
+            registry: ghcr
     name: Publish ${{ matrix.image }}
     steps:
+      - name: Checkout workflow utilities
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ needs.prepare.outputs.project_commit }}
+          fetch-depth: 1
+
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -500,24 +477,33 @@ jobs:
       - name: Create and push manifest
         env:
           IMAGE: ${{ matrix.image }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-          PROJECT_COMMIT_SHORT: ${{ needs.prepare.outputs.project_commit_short }}
-          PUBLISH_LATEST: ${{ needs.prepare.outputs.publish_latest }}
-          PUBLISH_STABLE: ${{ needs.prepare.outputs.publish_stable }}
         working-directory: /tmp/digests
         shell: bash
         run: |
           set -euo pipefail
-          tags=(-t "$IMAGE:$VERSION" -t "$IMAGE:sha-$PROJECT_COMMIT_SHORT")
-          if [[ "$PUBLISH_LATEST" == "true" ]]; then
-            tags+=(-t "$IMAGE:latest" -t "$IMAGE:edge")
-          fi
-          if [[ "$PUBLISH_STABLE" == "true" ]]; then
-            tags+=(-t "$IMAGE:stable")
-          fi
-          docker buildx imagetools create "${tags[@]}" \
+          docker buildx imagetools create -t "$IMAGE:latest" \
             $(printf "$IMAGE@sha256:%s " *)
-          docker buildx imagetools inspect "$IMAGE:$VERSION"
+          docker buildx imagetools inspect "$IMAGE:latest"
+
+      - name: Remove obsolete Docker Hub tags
+        if: matrix.registry == 'dockerhub'
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        shell: bash
+        run: >-
+          python3 scripts/cleanup_container_registry.py dockerhub
+          --repository aethersailor/subconverter
+
+      - name: Remove obsolete GHCR versions
+        if: matrix.registry == 'ghcr'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: >-
+          python3 scripts/cleanup_container_registry.py ghcr
+          --repository aethersailor/subconverter
+          --owner "${{ github.repository_owner }}"
 
   verify:
     needs: [prepare, smoke, build, merge]
