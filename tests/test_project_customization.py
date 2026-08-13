@@ -90,6 +90,10 @@ class ProjectCustomizationTests(unittest.TestCase):
             "attempt < max_fetch_attempts && isTransientFetchError(error_code)",
             source,
         )
+        self.assertIn(
+            'invalidate();\n                    if(!ensureStarted())',
+            source,
+        )
 
         integration_test = (
             ROOT / "scripts" / "test_outbound_headers.py"

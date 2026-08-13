@@ -761,7 +761,12 @@ public:
                 if(error_code.empty())
                     return status;
                 if(attempt < max_fetch_attempts && isTransientFetchError(error_code))
+                {
+                    invalidate();
+                    if(!ensureStarted())
+                        return fail(result, "Mihomo subscription transport is unavailable");
                     continue;
+                }
                 return fail(result, "Mihomo subscription request failed", status);
             }
             catch(const std::exception &)
