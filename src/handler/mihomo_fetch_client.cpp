@@ -92,6 +92,12 @@ constexpr std::uint32_t max_request_frame = 4U << 20;
 constexpr std::uint32_t max_response_frame = 128U << 20;
 constexpr std::uintmax_t max_manifest_size = 1U << 20;
 constexpr auto startup_timeout = std::chrono::seconds(5);
+constexpr int max_fetch_attempts = 2;
+
+bool isTransientFetchError(const std::string &error_code)
+{
+    return error_code == "timeout" || error_code == "fetch_failed";
+}
 
 std::string runtimePlatform()
 {
@@ -673,7 +679,6 @@ public:
         if(!ensureStarted())
             return fail(result, "Mihomo subscription transport is unavailable");
 
-        const std::uint64_t request_id = next_request_id_++;
         json headers = json::object();
         if(argument.request_headers)
         {
@@ -683,7 +688,6 @@ public:
 
         json request = {
             {"type", "fetch"},
-            {"id", request_id},
             {"url", argument.url},
             {"headers", std::move(headers)},
             {"proxy", argument.proxy},
@@ -691,73 +695,82 @@ public:
             {"timeout_ms", 20000},
             {"size_limit", global.maxAllowedDownloadSize},
         };
-        const auto payload = json::to_cbor(request);
-        if(!process_.writeFrame(payload))
+        for(int attempt = 1; attempt <= max_fetch_attempts; ++attempt)
         {
-            invalidate();
-            return fail(result, "Mihomo subscription transport write failed");
-        }
-
-        const auto timeout = std::chrono::milliseconds(25000);
-        auto response_frame = process_.readFrame(timeout);
-        if(!response_frame)
-        {
-            invalidate();
-            return fail(result, "Mihomo subscription transport timed out");
-        }
-
-        try
-        {
-            const json response = json::from_cbor(*response_frame, true, true);
-            if(response.value("type", "") != "response" || response.value("id", std::uint64_t{0}) != request_id)
+            const std::uint64_t request_id = next_request_id_++;
+            request["id"] = request_id;
+            const auto payload = json::to_cbor(request);
+            if(!process_.writeFrame(payload))
             {
                 invalidate();
-                return fail(result, "Mihomo subscription transport protocol mismatch");
+                return fail(result, "Mihomo subscription transport write failed");
             }
-            const int status = response.value("status", 0);
-            *result.status_code = status;
-            if(result.content)
+
+            const auto timeout = std::chrono::milliseconds(25000);
+            auto response_frame = process_.readFrame(timeout);
+            if(!response_frame)
             {
-                result.content->clear();
-                if(response.contains("body") && response["body"].is_binary())
+                invalidate();
+                return fail(result, "Mihomo subscription transport timed out");
+            }
+
+            try
+            {
+                const json response = json::from_cbor(*response_frame, true, true);
+                if(response.value("type", "") != "response" || response.value("id", std::uint64_t{0}) != request_id)
                 {
-                    const auto &body = response["body"].get_binary();
-                    result.content->assign(reinterpret_cast<const char *>(body.data()), body.size());
+                    invalidate();
+                    return fail(result, "Mihomo subscription transport protocol mismatch");
                 }
-            }
-            if(result.response_headers)
-            {
-                result.response_headers->clear();
-                if(response.contains("headers") && response["headers"].is_object())
+                const int status = response.value("status", 0);
+                *result.status_code = status;
+                if(result.content)
                 {
-                    for(const auto &[name, values] : response["headers"].items())
+                    result.content->clear();
+                    if(response.contains("body") && response["body"].is_binary())
                     {
-                        if(!values.is_array())
-                            continue;
-                        for(const auto &value : values)
+                        const auto &body = response["body"].get_binary();
+                        result.content->assign(reinterpret_cast<const char *>(body.data()), body.size());
+                    }
+                }
+                if(result.response_headers)
+                {
+                    result.response_headers->clear();
+                    if(response.contains("headers") && response["headers"].is_object())
+                    {
+                        for(const auto &[name, values] : response["headers"].items())
                         {
-                            if(value.is_string())
-                                *result.response_headers += name + ": " + value.get<std::string>() + "\r\n";
+                            if(!values.is_array())
+                                continue;
+                            for(const auto &value : values)
+                            {
+                                if(value.is_string())
+                                    *result.response_headers += name + ": " + value.get<std::string>() + "\r\n";
+                            }
                         }
                     }
                 }
-            }
-            if(result.body_hash)
-            {
-                result.body_hash->clear();
-                if(response.contains("body_hash") && response["body_hash"].is_string())
-                    *result.body_hash = response["body_hash"].get<std::string>();
-            }
+                if(result.body_hash)
+                {
+                    result.body_hash->clear();
+                    if(response.contains("body_hash") && response["body_hash"].is_string())
+                        *result.body_hash = response["body_hash"].get<std::string>();
+                }
 
-            if(response.value("error_code", "").empty())
-                return status;
-            return fail(result, "Mihomo subscription request failed", status);
+                const std::string error_code = response.value("error_code", "");
+                if(error_code.empty())
+                    return status;
+                if(attempt < max_fetch_attempts && isTransientFetchError(error_code))
+                    continue;
+                return fail(result, "Mihomo subscription request failed", status);
+            }
+            catch(const std::exception &)
+            {
+                invalidate();
+                return fail(result, "Mihomo subscription transport returned invalid data");
+            }
         }
-        catch(const std::exception &)
-        {
-            invalidate();
-            return fail(result, "Mihomo subscription transport returned invalid data");
-        }
+        return fail(result, "Mihomo subscription request failed");
     }
 
 private:

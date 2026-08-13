@@ -14,8 +14,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 class CaptureHandler(BaseHTTPRequestHandler):
     captured_headers = None
     captured_event = threading.Event()
+    retry_request_count = 0
+    retry_request_lock = threading.Lock()
 
     def do_GET(self):
+        is_retry_test = urllib.parse.urlsplit(self.path).path == "/retry-subscription"
+        if is_retry_test:
+            with type(self).retry_request_lock:
+                type(self).retry_request_count += 1
+                retry_attempt = type(self).retry_request_count
+            if retry_attempt == 1:
+                time.sleep(21)
+
         type(self).captured_headers = {key.lower(): value for key, value in self.headers.items()}
         type(self).captured_event.set()
         proxy = "ss://YWVzLTEyOC1nY206cGFzc3dvcmQ=@127.0.0.1:8388#header-test"
@@ -24,7 +34,11 @@ class CaptureHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            if not is_retry_test or retry_attempt != 1:
+                raise
 
     def log_message(self, _format, *_args):
         return
@@ -96,6 +110,29 @@ def main():
             raise RuntimeError(
                 "entry Host header leaked upstream: {!r}, expected {!r}".format(
                     headers.get("host"), expected_host
+                )
+            )
+
+        retry_subscription_url = "http://{}:{}/retry-subscription".format(
+            args.echo_host, server.server_address[1]
+        )
+        retry_query = urllib.parse.urlencode(
+            {"target": "mixed", "url": retry_subscription_url}
+        )
+        retry_request_url = args.service_url + "/sub?" + retry_query
+        with urllib.request.urlopen(retry_request_url, timeout=50) as response:
+            retry_body = response.read()
+            if response.status != 200 or not retry_body:
+                raise RuntimeError(
+                    "transient subscription retry did not produce a valid conversion"
+                )
+
+        with CaptureHandler.retry_request_lock:
+            retry_request_count = CaptureHandler.retry_request_count
+        if retry_request_count != 2:
+            raise RuntimeError(
+                "transient subscription fetch count = {}, expected 2".format(
+                    retry_request_count
                 )
             )
     finally:

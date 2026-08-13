@@ -76,6 +76,27 @@ class ProjectCustomizationTests(unittest.TestCase):
             integration_test,
         )
 
+    def test_subscription_fetch_retry_is_bounded_to_transient_helper_errors(self):
+        source = (
+            ROOT / "src" / "handler" / "mihomo_fetch_client.cpp"
+        ).read_text(encoding="utf-8")
+        self.assertIn("constexpr int max_fetch_attempts = 2;", source)
+        self.assertIn(
+            'return error_code == "timeout" || error_code == "fetch_failed";',
+            source,
+        )
+        self.assertIn("attempt <= max_fetch_attempts", source)
+        self.assertIn(
+            "attempt < max_fetch_attempts && isTransientFetchError(error_code)",
+            source,
+        )
+
+        integration_test = (
+            ROOT / "scripts" / "test_outbound_headers.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('time.sleep(21)', integration_test)
+        self.assertIn('if retry_request_count != 2:', integration_test)
+
     def test_inbound_verbose_logs_do_not_emit_query_tokens_or_header_values(self):
         source = (ROOT / "src" / "server" / "webserver_httplib.cpp").read_text(
             encoding="utf-8"
