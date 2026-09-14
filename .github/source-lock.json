@@ -1,101 +1,101 @@
 {
   "mihomo": {
-    "created_at": "2026-08-16T08:35:56Z",
+    "created_at": "2026-09-14T11:59:30Z",
     "immutable": false,
     "oracle_assets": {
       "linux-386": {
-        "digest": "sha256:c9b908b4cf54e67b16523286e9246849fce00f5c214c40c43937da9719375b26",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-386-v1.19.30.gz",
-        "id": 516687179,
-        "name": "mihomo-linux-386-v1.19.30.gz",
-        "size": 17876125
+        "digest": "sha256:797f5267ed92fb0d70ae9fc3513cbbffd52e18932954cb4d0b6a08d5d7829a66",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-386-v1.19.31.gz",
+        "id": 563462719,
+        "name": "mihomo-linux-386-v1.19.31.gz",
+        "size": 21366942
       },
       "linux-amd64": {
-        "digest": "sha256:cbe553d0319a414bd3a372c5976a252155b2c4882b66bce88a4d6bba9571a553",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-v1-v1.19.30.gz",
-        "id": 516687161,
-        "name": "mihomo-linux-amd64-v1-v1.19.30.gz",
-        "size": 18899943
+        "digest": "sha256:d4304c546c3cddcb6fafd4b4fddb0ba1a95ffa36606fda56d75db2e59ad24114",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1-v1.19.31.gz",
+        "id": 563462722,
+        "name": "mihomo-linux-amd64-v1-v1.19.31.gz",
+        "size": 22821828
       },
       "linux-arm64": {
-        "digest": "sha256:58896873736d28628f66de3677c8654fa0f180662523148e136cff4f6e890069",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-arm64-v1.19.30.gz",
-        "id": 516687149,
-        "name": "mihomo-linux-arm64-v1.19.30.gz",
-        "size": 16965828
+        "digest": "sha256:9e0f11afbf38426b8bd88fdc594678f8161c57eccb4e1b77acb12b493904f1d4",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-arm64-v1.19.31.gz",
+        "id": 563462701,
+        "name": "mihomo-linux-arm64-v1.19.31.gz",
+        "size": 20757911
       },
       "linux-armv7": {
-        "digest": "sha256:7b4e8793f9f8fa4a21ea66528890ebde5a73d557673fb94d3047eebb60ad7591",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-armv7-v1.19.30.gz",
-        "id": 516687121,
-        "name": "mihomo-linux-armv7-v1.19.30.gz",
-        "size": 17625046
+        "digest": "sha256:a61115819d9ebd568788b0f1bddfa6c9c03458071abdbda80f79291cac0276e1",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-armv7-v1.19.31.gz",
+        "id": 563462702,
+        "name": "mihomo-linux-armv7-v1.19.31.gz",
+        "size": 21108932
       },
       "macos-amd64": {
-        "digest": "sha256:b5355135a1446ca1af83c794f46435290a59ddd968dd73f7883b9c7977e14f8b",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-darwin-amd64-v1-v1.19.30.gz",
-        "id": 516687189,
-        "name": "mihomo-darwin-amd64-v1-v1.19.30.gz",
-        "size": 18300478
+        "digest": "sha256:b914c5a1713807202f3319eacef8c33afecb0adc5cf232d7b7ba3713186fe2ba",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-darwin-amd64-v1-v1.19.31.gz",
+        "id": 563462758,
+        "name": "mihomo-darwin-amd64-v1-v1.19.31.gz",
+        "size": 22244324
       },
       "macos-arm64": {
-        "digest": "sha256:2c7f3a7904fa1cee291e124123e630e7b1ebd13765dd9bf26c0a28432004d9f4",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-darwin-arm64-v1.19.30.gz",
-        "id": 516687188,
-        "name": "mihomo-darwin-arm64-v1.19.30.gz",
-        "size": 16805556
+        "digest": "sha256:d131f44b3deb2a8356f7ac75048ad67a10d53243323951c4f3cda7b672922963",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-darwin-arm64-v1.19.31.gz",
+        "id": 563462742,
+        "name": "mihomo-darwin-arm64-v1.19.31.gz",
+        "size": 20701178
       },
       "windows-386": {
-        "digest": "sha256:d2517ef827365248cda370b08a43d088d306bce8de763036ded15bb13c0f54d7",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-windows-386-v1.19.30.zip",
-        "id": 516687116,
-        "name": "mihomo-windows-386-v1.19.30.zip",
-        "size": 17890927
+        "digest": "sha256:6eec80bde200426529a8c31e8161e44f15c24d178f33e35f1b5650fb33be2830",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-windows-386-v1.19.31.zip",
+        "id": 563462664,
+        "name": "mihomo-windows-386-v1.19.31.zip",
+        "size": 21420315
       },
       "windows-amd64": {
-        "digest": "sha256:8b81fe2c5cd04ca6deb61eec6075150b44cc5ad13ab867750642e2422f7c1278",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-windows-amd64-v1-v1.19.30.zip",
-        "id": 516687128,
-        "name": "mihomo-windows-amd64-v1-v1.19.30.zip",
-        "size": 18529354
+        "digest": "sha256:d89c9bd746e8aacff89b2edf674813e25e8bd2dc565f4e12dc3b4526dd2b3177",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-windows-amd64-v1-v1.19.31.zip",
+        "id": 563462668,
+        "name": "mihomo-windows-amd64-v1-v1.19.31.zip",
+        "size": 22460787
       }
     },
     "oracle_profile": "published-platforms-v1",
-    "published_at": "2026-08-16T10:11:34Z",
-    "release_id": 371291937,
-    "release_url": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.30",
+    "published_at": "2026-09-14T13:34:02Z",
+    "release_id": 388422678,
+    "release_url": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.31",
     "repository": "MetaCubeX/mihomo",
     "required_assets": {
       "toolchain": {
-        "digest": "sha256:c8cb40df15fcee0be64899e62707086d8ec1ab1f70c1451b057ff8ca46f37c5d",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/toolchain.tar.gz",
-        "id": 516687083,
+        "digest": "sha256:d7b43406ce2722a4206ae173ee972f17a2da02e55f234a95b7c17a1bb9dd7e10",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/toolchain.tar.gz",
+        "id": 563462634,
         "name": "toolchain.tar.gz",
-        "size": 67736385
+        "size": 67722904
       },
       "vendor": {
-        "digest": "sha256:b15fdead33ef809c775ab21d2ad6ad9e8bf706a5222234e62533c3056763167e",
-        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/vendor.tar.gz",
-        "id": 516687093,
+        "digest": "sha256:4089c4e51ee1ecff64845d4de6886e3ebd3adc20ee6cf4520ce76465a16b65db",
+        "download_url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/vendor.tar.gz",
+        "id": 563462638,
         "name": "vendor.tar.gz",
-        "size": 13837992
+        "size": 17548822
       }
     },
-    "tag": "v1.19.30",
+    "tag": "v1.19.31",
     "tag_identity": {
       "annotated_tags": [],
-      "commit": "ac017cdd246ce8bd547653d927e7bf77d7ee73d5",
+      "commit": "ab405bad5beeeac8b003bb01f60f134f6df54471",
       "commit_verification": {
-        "reason": "valid",
-        "verified": true,
-        "verified_at": "2026-08-16T08:35:57Z"
+        "reason": "unsigned",
+        "verified": false,
+        "verified_at": null
       },
-      "ref_object_sha": "ac017cdd246ce8bd547653d927e7bf77d7ee73d5",
+      "ref_object_sha": "ab405bad5beeeac8b003bb01f60f134f6df54471",
       "ref_object_type": "commit",
-      "tree": "8570c671ccb6dd648965f7ab3db5c2b877568c02"
+      "tree": "bf1d3f0efdc504a883ea89705f274324bc353628"
     }
   },
-  "pair_id": "sha256:9f69eacb462d80b677bb6268f2e4e80f7f60c4256d2ece866fb913099d56ca6a",
+  "pair_id": "sha256:cafd72fbf4b9ab98aa2d7bc661e6b4863843716ba8f13d014b44a0c6debd4255",
   "project": {
     "helper_overlay_sha256": "sha256:c81a787bd67db7a5eb8cc081bc4d8b7d0c9de02c70058a5b13b78416f5bd806d",
     "helper_protocol": 1,
