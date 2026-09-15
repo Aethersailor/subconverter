@@ -2,7 +2,7 @@ name: Sync Upstream and Publish
 
 on:
   schedule:
-    - cron: "23 * * * *"
+    - cron: "23 0 */3 * *"
   workflow_dispatch:
     inputs:
       dry_run:
