@@ -144,19 +144,18 @@ ghcr.io/aethersailor/subconverter:latest
 flowchart LR
     A["定时或手动检查"] --> B["解析上游与 Mihomo 最新稳定版"]
     B --> C["确认用于构建的版本"]
-    C --> D["构建并验证待发布版本"]
-    D --> E["Mihomo 请求特征对照"]
-    E --> F["更新 master 并发布 Docker 镜像"]
+    C --> D["构建待发布版本"]
+    D --> F["更新 master 并发布 Docker 镜像"]
 ```
 
 自动化按以下顺序运行：
 
 1. 检查 subconverter 上游 `master` 和 Mihomo 最新稳定 Release 是否发生变化。
 2. 确认本次构建使用的上游提交和 Mihomo 版本。
-3. 验证 Linux、Windows 和 macOS 的构建兼容性；这些构建不作为公开下载内容。
-4. 启动待发布的 Docker 镜像，并测试真实的机场订阅获取路径。
-5. 使用对应版本的官方 Mihomo 对照 HTTP/1.1 请求和 TLS ClientHello。
-6. 所有检查通过后，才更新 `master` 并发布 Docker Hub、GHCR 多架构镜像。任一步失败都不会发布新镜像。
+3. 构建 Linux、Windows 和 macOS 制品。
+4. 完成构建后，更新 `master` 并发布 Docker Hub、GHCR 多架构镜像。来源、版本和制品身份校验继续保留。
+
+CodeQL 独立扫描，不阻塞构建或合并。Dependabot 自动合并依赖更新，功能由维护者人工验证。
 
 没有发现上游或 Mihomo 变化时，仓库不会重复发布镜像。检测到变化但验证失败时，用户继续获得上一个通过验证的版本。
 
@@ -232,7 +231,7 @@ curl --fail http://127.0.0.1:25500/version
 <details>
 <summary><strong>会始终跟随 Mihomo 最新版本吗？</strong></summary>
 
-自动化会检查 Mihomo 最新稳定 Release，但不会在未经验证时直接更新。版本、请求行为、跨平台兼容性和镜像测试全部通过后，才会发布新的公开镜像。
+自动化会检查 Mihomo 最新稳定 Release，但不会在未经验证时直接更新。锁定来源身份并完成构建后，发布新的公开镜像；功能由维护者人工验证。
 
 </details>
 

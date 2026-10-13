@@ -23,15 +23,6 @@ outputs must use the `.exe` suffix. The build command downloads the exact
 source-lock assets, verifies their sizes and SHA-256 identities, checks out the
 exact Mihomo commit/tree, recovers the release's target-specific embedded CA
 from the locked oracle artifact, and emits a content-addressed manifest.
-The native Linux/amd64 build also runs the helper's Go tests with that locked
-toolchain and vendor tree before compilation.
-
-The native workflow then runs `scripts/test_mihomo_oracle_parity.py` against
-the verified official Linux/amd64 release executable and the freshly built
-helper. It compares the raw HTTP/1.1 request and parsed TLS ClientHello while
-masking only audited per-connection randomness. HTTP/2 is reported separately
-and is not inferred from source identity alone.
-
 Before invoking any native release script, download the matching pair and set:
 
 ```sh

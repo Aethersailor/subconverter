@@ -1,8 +1,7 @@
 name: Sync Upstream and Publish
-
-on:
+'on':
   schedule:
-    - cron: "23 0 */3 * *"
+  - cron: 23 0 */3 * *
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,17 +19,14 @@ on:
         required: true
         default: false
         type: boolean
-
 permissions:
   actions: read
   contents: write
   issues: write
   packages: write
-
 concurrency:
   group: upstream-sync
   cancel-in-progress: false
-
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -47,327 +43,311 @@ jobs:
       mihomo_commit: ${{ steps.sync.outputs.mihomo_commit }}
       pair_id: ${{ steps.sync.outputs.pair_id }}
     steps:
-      - name: Checkout master
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: master
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Checkout master
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      with:
+        ref: master
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Configure Git
+      shell: bash
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    - name: Resolve exact upstream and Mihomo source identities
+      id: source_lock
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      shell: bash
+      run: |
+        set -euo pipefail
 
-      - name: Configure Git
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        python3 scripts/project_metadata.py render --check
 
-      - name: Resolve exact upstream and Mihomo source identities
-        id: source_lock
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
+        evidence_dir="$(mktemp -d "$RUNNER_TEMP/source-lock-evidence.XXXXXX")"
+        responses="$evidence_dir/responses.json"
+        resolved_lock="$RUNNER_TEMP/resolved-source-lock.json"
+        printf '{}\n' > "$responses"
 
-          python3 scripts/project_metadata.py render --check
-
-          evidence_dir="$(mktemp -d "$RUNNER_TEMP/source-lock-evidence.XXXXXX")"
-          responses="$evidence_dir/responses.json"
-          resolved_lock="$RUNNER_TEMP/resolved-source-lock.json"
-          printf '{}\n' > "$responses"
-
-          capture_response() {
-            local path="$1"
-            local response
-            response="$(mktemp "$RUNNER_TEMP/source-lock-response.XXXXXX")"
-            if ! python3 scripts/retry_gh_api.py -- \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "$path" > "$response"; then
-              rm -f "$response"
-              return 1
-            fi
-            jq \
-              --arg key "/$path" \
-              --slurpfile payload "$response" \
-              '. + {($key): $payload[0]}' \
-              "$responses" > "$responses.next"
-            mv "$responses.next" "$responses"
+        capture_response() {
+          local path="$1"
+          local response
+          response="$(mktemp "$RUNNER_TEMP/source-lock-response.XXXXXX")"
+          if ! python3 scripts/retry_gh_api.py -- \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$path" > "$response"; then
             rm -f "$response"
-          }
+            return 1
+          fi
+          jq \
+            --arg key "/$path" \
+            --slurpfile payload "$response" \
+            '. + {($key): $payload[0]}' \
+            "$responses" > "$responses.next"
+          mv "$responses.next" "$responses"
+          rm -f "$response"
+        }
 
-          upstream_ref='repos/asdlokj1qpi233/subconverter/git/ref/heads/master'
-          capture_response "$upstream_ref"
-          upstream_commit="$(jq -er --arg key "/$upstream_ref" '.[$key].object.sha' "$responses")"
-          capture_response "repos/asdlokj1qpi233/subconverter/git/commits/$upstream_commit"
-          capture_response "repos/asdlokj1qpi233/subconverter/contents/src/version.h?ref=$upstream_commit"
+        upstream_ref='repos/asdlokj1qpi233/subconverter/git/ref/heads/master'
+        capture_response "$upstream_ref"
+        upstream_commit="$(jq -er --arg key "/$upstream_ref" '.[$key].object.sha' "$responses")"
+        capture_response "repos/asdlokj1qpi233/subconverter/git/commits/$upstream_commit"
+        capture_response "repos/asdlokj1qpi233/subconverter/contents/src/version.h?ref=$upstream_commit"
 
-          release_path='repos/MetaCubeX/mihomo/releases/latest'
-          capture_response "$release_path"
-          mihomo_tag="$(jq -er --arg key "/$release_path" '.[$key].tag_name' "$responses")"
-          tag_ref="repos/MetaCubeX/mihomo/git/ref/tags/$mihomo_tag"
-          capture_response "$tag_ref"
-          object_type="$(jq -er --arg key "/$tag_ref" '.[$key].object.type' "$responses")"
-          object_sha="$(jq -er --arg key "/$tag_ref" '.[$key].object.sha' "$responses")"
-          for _ in {1..8}; do
-            if [[ "$object_type" == commit ]]; then
-              break
-            fi
-            if [[ "$object_type" != tag ]]; then
-              echo "Mihomo release tag resolved to unsupported object type: $object_type" >&2
-              exit 1
-            fi
-            tag_object="repos/MetaCubeX/mihomo/git/tags/$object_sha"
-            capture_response "$tag_object"
-            object_type="$(jq -er --arg key "/$tag_object" '.[$key].object.type' "$responses")"
-            object_sha="$(jq -er --arg key "/$tag_object" '.[$key].object.sha' "$responses")"
-          done
-          if [[ "$object_type" != commit ]]; then
-            echo 'Mihomo release tag exceeded the supported annotation depth' >&2
+        release_path='repos/MetaCubeX/mihomo/releases/latest'
+        capture_response "$release_path"
+        mihomo_tag="$(jq -er --arg key "/$release_path" '.[$key].tag_name' "$responses")"
+        tag_ref="repos/MetaCubeX/mihomo/git/ref/tags/$mihomo_tag"
+        capture_response "$tag_ref"
+        object_type="$(jq -er --arg key "/$tag_ref" '.[$key].object.type' "$responses")"
+        object_sha="$(jq -er --arg key "/$tag_ref" '.[$key].object.sha' "$responses")"
+        for _ in {1..8}; do
+          if [[ "$object_type" == commit ]]; then
+            break
+          fi
+          if [[ "$object_type" != tag ]]; then
+            echo "Mihomo release tag resolved to unsupported object type: $object_type" >&2
             exit 1
           fi
-          capture_response "repos/MetaCubeX/mihomo/git/commits/$object_sha"
+          tag_object="repos/MetaCubeX/mihomo/git/tags/$object_sha"
+          capture_response "$tag_object"
+          object_type="$(jq -er --arg key "/$tag_object" '.[$key].object.type' "$responses")"
+          object_sha="$(jq -er --arg key "/$tag_object" '.[$key].object.sha' "$responses")"
+        done
+        if [[ "$object_type" != commit ]]; then
+          echo 'Mihomo release tag exceeded the supported annotation depth' >&2
+          exit 1
+        fi
+        capture_response "repos/MetaCubeX/mihomo/git/commits/$object_sha"
 
-          python3 scripts/resolve_source_lock.py \
-            --fixture-dir "$evidence_dir" \
-            --existing .github/source-lock.json \
-            --output "$resolved_lock"
+        python3 scripts/resolve_source_lock.py \
+          --fixture-dir "$evidence_dir" \
+          --existing .github/source-lock.json \
+          --output "$resolved_lock"
 
-          echo "path=$resolved_lock" >> "$GITHUB_OUTPUT"
+        echo "path=$resolved_lock" >> "$GITHUB_OUTPUT"
+    - name: Prepare synchronized candidate
+      id: sync
+      env:
+        DRY_RUN: ${{ inputs.dry_run || false }}
+        FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+        MANUAL_RELEASE: ${{ inputs.publish_release || false }}
+        RESOLVED_LOCK: ${{ steps.source_lock.outputs.path }}
+      shell: bash
+      run: |
+        set -euo pipefail
 
-      - name: Prepare synchronized candidate
-        id: sync
-        env:
-          DRY_RUN: ${{ inputs.dry_run || false }}
-          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
-          MANUAL_RELEASE: ${{ inputs.publish_release || false }}
-          RESOLVED_LOCK: ${{ steps.source_lock.outputs.path }}
-        shell: bash
-        run: |
-          set -euo pipefail
+        base_master="$(git rev-parse HEAD)"
+        old_upstream_commit="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_commit"])')"
+        old_upstream_version="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_version"])')"
+        old_mihomo_tag="$(python3 -c 'import json; print(json.load(open(".github/source-lock.json"))["mihomo"]["tag"])')"
+        old_mihomo_commit="$(python3 -c 'import json; print(json.load(open(".github/source-lock.json"))["mihomo"]["tag_identity"]["commit"])')"
+        old_pair_id="$(python3 -c 'import json; print(json.load(open(".github/source-lock.json"))["pair_id"])')"
 
-          base_master="$(git rev-parse HEAD)"
-          old_upstream_commit="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_commit"])')"
-          old_upstream_version="$(python3 -c 'import json; print(json.load(open(".github/project-metadata.json"))["upstream_version"])')"
-          old_mihomo_tag="$(python3 -c 'import json; print(json.load(open(".github/source-lock.json"))["mihomo"]["tag"])')"
-          old_mihomo_commit="$(python3 -c 'import json; print(json.load(open(".github/source-lock.json"))["mihomo"]["tag_identity"]["commit"])')"
-          old_pair_id="$(python3 -c 'import json; print(json.load(open(".github/source-lock.json"))["pair_id"])')"
+        upstream_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["subconverter"]["commit"])' "$RESOLVED_LOCK")"
+        upstream_tree="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["subconverter"]["tree"])' "$RESOLVED_LOCK")"
+        upstream_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["subconverter"]["version"])' "$RESOLVED_LOCK")"
+        mihomo_tag="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mihomo"]["tag"])' "$RESOLVED_LOCK")"
+        mihomo_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mihomo"]["tag_identity"]["commit"])' "$RESOLVED_LOCK")"
+        pair_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pair_id"])' "$RESOLVED_LOCK")"
 
-          upstream_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["subconverter"]["commit"])' "$RESOLVED_LOCK")"
-          upstream_tree="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["subconverter"]["tree"])' "$RESOLVED_LOCK")"
-          upstream_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["subconverter"]["version"])' "$RESOLVED_LOCK")"
-          mihomo_tag="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mihomo"]["tag"])' "$RESOLVED_LOCK")"
-          mihomo_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mihomo"]["tag_identity"]["commit"])' "$RESOLVED_LOCK")"
-          pair_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pair_id"])' "$RESOLVED_LOCK")"
+        git remote add upstream https://github.com/asdlokj1qpi233/subconverter.git 2>/dev/null || \
+          git remote set-url upstream https://github.com/asdlokj1qpi233/subconverter.git
+        git fetch --no-tags upstream master
+        fetched_upstream_commit="$(git rev-parse upstream/master)"
+        fetched_upstream_tree="$(git rev-parse 'upstream/master^{tree}')"
+        fetched_upstream_version="$(git show upstream/master:src/version.h | sed -nE 's/^#define VERSION \"([^\"]+)\"/\1/p')"
+        if [[ "$fetched_upstream_commit" != "$upstream_commit" || \
+              "$fetched_upstream_tree" != "$upstream_tree" || \
+              "$fetched_upstream_version" != "$upstream_version" ]]; then
+          echo "Upstream master changed while resolving the source lock; refusing a mixed snapshot" >&2
+          exit 1
+        fi
 
-          git remote add upstream https://github.com/asdlokj1qpi233/subconverter.git 2>/dev/null || \
-            git remote set-url upstream https://github.com/asdlokj1qpi233/subconverter.git
-          git fetch --no-tags upstream master
-          fetched_upstream_commit="$(git rev-parse upstream/master)"
-          fetched_upstream_tree="$(git rev-parse 'upstream/master^{tree}')"
-          fetched_upstream_version="$(git show upstream/master:src/version.h | sed -nE 's/^#define VERSION \"([^\"]+)\"/\1/p')"
-          if [[ "$fetched_upstream_commit" != "$upstream_commit" || \
-                "$fetched_upstream_tree" != "$upstream_tree" || \
-                "$fetched_upstream_version" != "$upstream_version" ]]; then
-            echo "Upstream master changed while resolving the source lock; refusing a mixed snapshot" >&2
-            exit 1
-          fi
+        upstream_changed=false
+        mihomo_changed=false
+        pair_changed=false
+        source_lock_changed=false
+        [[ "$old_upstream_commit" != "$upstream_commit" || "$old_upstream_version" != "$upstream_version" ]] && upstream_changed=true
+        [[ "$old_mihomo_tag" != "$mihomo_tag" || "$old_mihomo_commit" != "$mihomo_commit" ]] && mihomo_changed=true
+        [[ "$old_pair_id" != "$pair_id" ]] && pair_changed=true
+        cmp --silent .github/source-lock.json "$RESOLVED_LOCK" || source_lock_changed=true
 
-          upstream_changed=false
-          mihomo_changed=false
-          pair_changed=false
-          source_lock_changed=false
-          [[ "$old_upstream_commit" != "$upstream_commit" || "$old_upstream_version" != "$upstream_version" ]] && upstream_changed=true
-          [[ "$old_mihomo_tag" != "$mihomo_tag" || "$old_mihomo_commit" != "$mihomo_commit" ]] && mihomo_changed=true
-          [[ "$old_pair_id" != "$pair_id" ]] && pair_changed=true
-          cmp --silent .github/source-lock.json "$RESOLVED_LOCK" || source_lock_changed=true
+        should_build=false
+        if [[ "$source_lock_changed" == "true" || "$FORCE_REBUILD" == "true" || "$MANUAL_RELEASE" == "true" ]]; then
+          should_build=true
+        fi
 
-          should_build=false
-          if [[ "$source_lock_changed" == "true" || "$FORCE_REBUILD" == "true" || "$MANUAL_RELEASE" == "true" ]]; then
-            should_build=true
-          fi
+        release_needed=false
+        if [[ "$source_lock_changed" == "true" || "$MANUAL_RELEASE" == "true" ]]; then
+          release_needed=true
+        fi
 
-          release_needed=false
-          if [[ "$source_lock_changed" == "true" || "$MANUAL_RELEASE" == "true" ]]; then
-            release_needed=true
-          fi
+        {
+          echo "### Synchronization check"
+          echo
+          echo "- Upstream: \`$old_upstream_commit\` -> \`$upstream_commit\`"
+          echo "- Upstream version: \`$old_upstream_version\` -> \`$upstream_version\`"
+          echo "- Mihomo stable release: \`$old_mihomo_tag\` -> \`$mihomo_tag\`"
+          echo "- Mihomo commit: \`$old_mihomo_commit\` -> \`$mihomo_commit\`"
+          echo "- Source pair: \`$old_pair_id\` -> \`$pair_id\`"
+          echo "- Source lock changed: \`$source_lock_changed\`"
+          echo "- Mihomo identity changed: \`$mihomo_changed\`"
+          echo "- Pair identity changed: \`$pair_changed\`"
+          echo "- Build required: \`$should_build\`"
+          echo "- Release required: \`$release_needed\`"
+          echo "- Dry run: \`$DRY_RUN\`"
+        } >> "$GITHUB_STEP_SUMMARY"
 
-          {
-            echo "### Synchronization check"
-            echo
-            echo "- Upstream: \`$old_upstream_commit\` -> \`$upstream_commit\`"
-            echo "- Upstream version: \`$old_upstream_version\` -> \`$upstream_version\`"
-            echo "- Mihomo stable release: \`$old_mihomo_tag\` -> \`$mihomo_tag\`"
-            echo "- Mihomo commit: \`$old_mihomo_commit\` -> \`$mihomo_commit\`"
-            echo "- Source pair: \`$old_pair_id\` -> \`$pair_id\`"
-            echo "- Source lock changed: \`$source_lock_changed\`"
-            echo "- Mihomo identity changed: \`$mihomo_changed\`"
-            echo "- Pair identity changed: \`$pair_changed\`"
-            echo "- Build required: \`$should_build\`"
-            echo "- Release required: \`$release_needed\`"
-            echo "- Dry run: \`$DRY_RUN\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+        candidate_branch=""
+        candidate_commit="$base_master"
+        promote_required=false
+        project_owned=(
+          README.md
+          .gitattributes
+          .github/ISSUE_TEMPLATE/bug_report.yml
+          .github/ISSUE_TEMPLATE/config.yml
+          .github/ISSUE_TEMPLATE/feature_request.yml
+          .github/workflows/
+          .github/dependabot.yml
+          .github/project-metadata.json
+          .github/source-lock.json
+          .github/templates/README.md.tmpl
+          scripts/Dockerfile
+          scripts/build.alpine.release.sh
+          scripts/build.macos.release.sh
+          scripts/build.windows.release.sh
+          scripts/build_mihomo_fetcher.py
+          scripts/install_locked_mihomo_fetcher.sh
+          scripts/MIHOMO_FETCHER_PACKAGING.md
+          scripts/package_mihomo_fetcher.py
+          scripts/project_metadata.py
+          scripts/retry_gh_api.py
+          scripts/resolve_source_lock.py
+          mihomo-fetcher/
+          CMakeLists.txt
+          cmake/project_version.h.in
+          src/generator/config/nodemanip.cpp
+          src/handler/interfaces.cpp
+          src/handler/mihomo_fetch_client.cpp
+          src/handler/mihomo_fetch_client.h
+          src/handler/multithread.cpp
+          src/handler/multithread.h
+          src/handler/webget.cpp
+          src/handler/webget.h
+          src/server/webserver_httplib.cpp
+          src/utils/sha256.cpp
+          src/utils/sha256.h
+          .dockerignore
+        )
 
-          candidate_branch=""
-          candidate_commit="$base_master"
-          promote_required=false
-          project_owned=(
-            README.md
-            .gitattributes
-            .github/ISSUE_TEMPLATE/bug_report.yml
-            .github/ISSUE_TEMPLATE/config.yml
-            .github/ISSUE_TEMPLATE/feature_request.yml
-            .github/workflows/auto_sync.yml
-            .github/workflows/build.yml
-            .github/workflows/docker.yml
-            .github/project-metadata.json
-            .github/source-lock.json
-            .github/templates/README.md.tmpl
-            scripts/Dockerfile
-            scripts/build.alpine.release.sh
-            scripts/build.macos.release.sh
-            scripts/build.windows.release.sh
-            scripts/build_mihomo_fetcher.py
-            scripts/install_locked_mihomo_fetcher.sh
-            scripts/MIHOMO_FETCHER_PACKAGING.md
-            scripts/package_mihomo_fetcher.py
-            scripts/project_metadata.py
-            scripts/retry_gh_api.py
-            scripts/resolve_source_lock.py
-            scripts/test_mihomo_oracle_parity.py
-            scripts/test_outbound_headers.py
-            scripts/mihomo_conformance/
-            mihomo-fetcher/
-            CMakeLists.txt
-            cmake/project_version.h.in
-            src/generator/config/nodemanip.cpp
-            src/handler/interfaces.cpp
-            src/handler/mihomo_fetch_client.cpp
-            src/handler/mihomo_fetch_client.h
-            src/handler/multithread.cpp
-            src/handler/multithread.h
-            src/handler/webget.cpp
-            src/handler/webget.h
-            src/server/webserver_httplib.cpp
-            src/utils/sha256.cpp
-            src/utils/sha256.h
-            tests/test_build_mihomo_fetcher.py
-            tests/test_fetch_purpose.py
-            tests/test_mihomo_conformance.py
-            tests/test_mihomo_helper_identity.py
-            tests/test_mihomo_oracle_parity.py
-            tests/test_package_mihomo_fetcher.py
-            tests/test_project_customization.py
-            tests/test_retry_gh_api.py
-            tests/test_source_lock.py
-            .dockerignore
-          )
+        if [[ "$source_lock_changed" == "true" ]]; then
+          candidate_branch="automation/sync-$GITHUB_RUN_ID"
+          git switch -c "$candidate_branch"
 
-          if [[ "$source_lock_changed" == "true" ]]; then
-            candidate_branch="automation/sync-$GITHUB_RUN_ID"
-            git switch -c "$candidate_branch"
+          if [[ "$upstream_changed" == "true" ]]; then
+            set +e
+            git merge --no-commit --no-ff upstream/master
+            merge_status=$?
+            set -e
 
-            if [[ "$upstream_changed" == "true" ]]; then
-              set +e
-              git merge --no-commit --no-ff upstream/master
-              merge_status=$?
-              set -e
+            if [[ $merge_status -ne 0 ]]; then
+              mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+              if [[ ${#conflicts[@]} -eq 0 ]]; then
+                echo "Upstream merge failed without resolvable file conflicts" >&2
+                exit 1
+              fi
 
-              if [[ $merge_status -ne 0 ]]; then
-                mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
-                if [[ ${#conflicts[@]} -eq 0 ]]; then
-                  echo "Upstream merge failed without resolvable file conflicts" >&2
-                  exit 1
+              for path in "${conflicts[@]}"; do
+                if [[ "$path" == "README-cn.md" || "$path" == "README-docker.md" ]]; then
+                  git rm -f -- "$path"
+                  continue
                 fi
 
-                for path in "${conflicts[@]}"; do
-                  if [[ "$path" == "README-cn.md" || "$path" == "README-docker.md" ]]; then
-                    git rm -f -- "$path"
-                    continue
-                  fi
-
-                  owned=false
-                  for owned_path in "${project_owned[@]}"; do
-                    if [[ "$path" == "$owned_path" || \
-                          ( "$owned_path" == */ && "$path" == "$owned_path"* ) ]]; then
-                      owned=true
-                      break
-                    fi
-                  done
-                  if [[ "$owned" == "true" ]]; then
-                    git restore --source="$base_master" --staged --worktree -- "$path"
+                owned=false
+                for owned_path in "${project_owned[@]}"; do
+                  if [[ "$path" == "$owned_path" || \
+                        ( "$owned_path" == */ && "$path" == "$owned_path"* ) ]]; then
+                    owned=true
+                    break
                   fi
                 done
-
-                remaining="$(git diff --name-only --diff-filter=U)"
-                if [[ -n "$remaining" ]]; then
-                  echo "Unresolved upstream conflicts:" >&2
-                  echo "$remaining" >&2
-                  exit 1
+                if [[ "$owned" == "true" ]]; then
+                  git restore --source="$base_master" --staged --worktree -- "$path"
                 fi
+              done
+
+              remaining="$(git diff --name-only --diff-filter=U)"
+              if [[ -n "$remaining" ]]; then
+                echo "Unresolved upstream conflicts:" >&2
+                echo "$remaining" >&2
+                exit 1
               fi
             fi
-
-            git restore --source="$base_master" --staged --worktree -- "${project_owned[@]}"
-            git rm -f --ignore-unmatch README-cn.md README-docker.md
-
-            cp "$RESOLVED_LOCK" .github/source-lock.json
-            timestamp="$(date --iso-8601=seconds)"
-            UPSTREAM_CHANGED="$upstream_changed" python3 - \
-              "$upstream_version" "$upstream_commit" "$timestamp" <<'PY'
-          import json
-          import os
-          import sys
-          from pathlib import Path
-
-          path = Path(".github/project-metadata.json")
-          metadata = json.loads(path.read_text(encoding="utf-8"))
-          metadata["upstream_version"] = sys.argv[1]
-          metadata["upstream_commit"] = sys.argv[2]
-          if os.environ["UPSTREAM_CHANGED"] == "true":
-              metadata["upstream_synced_at"] = sys.argv[3]
-          path.write_text(
-              json.dumps(metadata, ensure_ascii=True, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          PY
-            python3 scripts/project_metadata.py render
-            python3 scripts/project_metadata.py render --check
-
-            git add -A
-            if git diff --cached --quiet; then
-              echo "Metadata indicated a change but the candidate tree is unchanged" >&2
-              exit 1
-            fi
-            pair_hash="${pair_id#sha256:}"
-            git commit -m "chore(sync): update source pair ${pair_hash:0:8}"
-            candidate_commit="$(git rev-parse HEAD)"
-            promote_required=true
-
-            if [[ "$DRY_RUN" != "true" ]]; then
-              git push origin "HEAD:refs/heads/$candidate_branch"
-            fi
           fi
 
-          version="$(python3 scripts/project_metadata.py version --project-commit "$candidate_commit")"
+          git restore --source="$base_master" --staged --worktree -- "${project_owned[@]}"
+          git rm -f --ignore-unmatch README-cn.md README-docker.md
+        git rm -r -f --ignore-unmatch tests scripts/mihomo_conformance
 
-          if [[ "$DRY_RUN" == "true" ]]; then
-            should_build=false
-            promote_required=false
-            candidate_branch=""
+          cp "$RESOLVED_LOCK" .github/source-lock.json
+          timestamp="$(date --iso-8601=seconds)"
+          UPSTREAM_CHANGED="$upstream_changed" python3 - \
+            "$upstream_version" "$upstream_commit" "$timestamp" <<'PY'
+        import json
+        import os
+        import sys
+        from pathlib import Path
+
+        path = Path(".github/project-metadata.json")
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        metadata["upstream_version"] = sys.argv[1]
+        metadata["upstream_commit"] = sys.argv[2]
+        if os.environ["UPSTREAM_CHANGED"] == "true":
+            metadata["upstream_synced_at"] = sys.argv[3]
+        path.write_text(
+            json.dumps(metadata, ensure_ascii=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        PY
+          python3 scripts/project_metadata.py render
+          python3 scripts/project_metadata.py render --check
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Metadata indicated a change but the candidate tree is unchanged" >&2
+            exit 1
           fi
+          pair_hash="${pair_id#sha256:}"
+          git commit -m "chore(sync): update source pair ${pair_hash:0:8}"
+          candidate_commit="$(git rev-parse HEAD)"
+          promote_required=true
 
-          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
-          echo "promote_required=$promote_required" >> "$GITHUB_OUTPUT"
-          echo "candidate_branch=$candidate_branch" >> "$GITHUB_OUTPUT"
-          echo "candidate_commit=$candidate_commit" >> "$GITHUB_OUTPUT"
-          echo "base_master=$base_master" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "release_needed=$release_needed" >> "$GITHUB_OUTPUT"
-          echo "source_lock_changed=$source_lock_changed" >> "$GITHUB_OUTPUT"
-          echo "mihomo_tag=$mihomo_tag" >> "$GITHUB_OUTPUT"
-          echo "mihomo_commit=$mihomo_commit" >> "$GITHUB_OUTPUT"
-          echo "pair_id=$pair_id" >> "$GITHUB_OUTPUT"
+          if [[ "$DRY_RUN" != "true" ]]; then
+            git push origin "HEAD:refs/heads/$candidate_branch"
+          fi
+        fi
 
+        version="$(python3 scripts/project_metadata.py version --project-commit "$candidate_commit")"
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+          should_build=false
+          promote_required=false
+          candidate_branch=""
+        fi
+
+        echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+        echo "promote_required=$promote_required" >> "$GITHUB_OUTPUT"
+        echo "candidate_branch=$candidate_branch" >> "$GITHUB_OUTPUT"
+        echo "candidate_commit=$candidate_commit" >> "$GITHUB_OUTPUT"
+        echo "base_master=$base_master" >> "$GITHUB_OUTPUT"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "release_needed=$release_needed" >> "$GITHUB_OUTPUT"
+        echo "source_lock_changed=$source_lock_changed" >> "$GITHUB_OUTPUT"
+        echo "mihomo_tag=$mihomo_tag" >> "$GITHUB_OUTPUT"
+        echo "mihomo_commit=$mihomo_commit" >> "$GITHUB_OUTPUT"
+        echo "pair_id=$pair_id" >> "$GITHUB_OUTPUT"
   native:
     needs: sync
     if: needs.sync.outputs.should_build == 'true'
@@ -375,7 +355,6 @@ jobs:
     with:
       ref: ${{ needs.sync.outputs.candidate_commit }}
     secrets: inherit
-
   docker_candidate:
     needs: sync
     if: needs.sync.outputs.should_build == 'true'
@@ -384,240 +363,240 @@ jobs:
       ref: ${{ needs.sync.outputs.candidate_commit }}
       version: ${{ needs.sync.outputs.version }}
       push: false
-      run_smoke: true
     secrets: inherit
-
   promote:
-    needs: [sync, native, docker_candidate]
+    needs:
+    - sync
+    - native
+    - docker_candidate
     if: needs.sync.outputs.promote_required == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout candidate
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: ${{ needs.sync.outputs.candidate_commit }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fast-forward master
-        env:
-          BASE_MASTER: ${{ needs.sync.outputs.base_master }}
-          CANDIDATE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote_master="$(git ls-remote origin refs/heads/master | cut -f1)"
-          if [[ "$remote_master" != "$BASE_MASTER" ]]; then
-            echo "master changed during candidate validation" >&2
-            exit 1
-          fi
-          git push origin "$CANDIDATE_COMMIT:refs/heads/master"
-
+    - name: Checkout candidate
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      with:
+        ref: ${{ needs.sync.outputs.candidate_commit }}
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Fast-forward master
+      env:
+        BASE_MASTER: ${{ needs.sync.outputs.base_master }}
+        CANDIDATE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        remote_master="$(git ls-remote origin refs/heads/master | cut -f1)"
+        if [[ "$remote_master" != "$BASE_MASTER" ]]; then
+          echo "master changed during candidate validation" >&2
+          exit 1
+        fi
+        git push origin "$CANDIDATE_COMMIT:refs/heads/master"
   publish:
-    needs: [sync, native, docker_candidate, promote]
-    if: >-
-      always() &&
-      needs.sync.outputs.should_build == 'true' &&
-      needs.native.result == 'success' &&
-      needs.docker_candidate.result == 'success' &&
-      (needs.promote.result == 'success' || needs.promote.result == 'skipped')
+    needs:
+    - sync
+    - native
+    - docker_candidate
+    - promote
+    if: always() && needs.sync.outputs.should_build == 'true' && needs.native.result == 'success' && needs.docker_candidate.result == 'success' && (needs.promote.result == 'success' || needs.promote.result == 'skipped')
     uses: ./.github/workflows/docker.yml
     with:
       ref: ${{ needs.sync.outputs.candidate_commit }}
       version: ${{ needs.sync.outputs.version }}
       push: true
-      run_smoke: false
     secrets: inherit
-
   release:
-    needs: [sync, native, publish]
+    needs:
+    - sync
+    - native
+    - publish
     if: needs.sync.outputs.release_needed == 'true' && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout release commit
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: ${{ needs.sync.outputs.candidate_commit }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create immutable tag
-        env:
-          VERSION: ${{ needs.sync.outputs.version }}
-          RELEASE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            git fetch --no-tags origin "refs/tags/$VERSION:refs/tags/$VERSION"
-            existing_commit="$(git rev-list -n 1 "$VERSION")"
-            if [[ "$existing_commit" != "$RELEASE_COMMIT" ]]; then
-              echo "Release tag $VERSION already points to $existing_commit" >&2
-              exit 1
-            fi
-            echo "Release tag $VERSION already points to the expected commit"
-            exit 0
+    - name: Checkout release commit
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      with:
+        ref: ${{ needs.sync.outputs.candidate_commit }}
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create immutable tag
+      env:
+        VERSION: ${{ needs.sync.outputs.version }}
+        RELEASE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if git ls-remote --exit-code origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+          git fetch --no-tags origin "refs/tags/$VERSION:refs/tags/$VERSION"
+          existing_commit="$(git rev-list -n 1 "$VERSION")"
+          if [[ "$existing_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "Release tag $VERSION already points to $existing_commit" >&2
+            exit 1
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" "$RELEASE_COMMIT" -m "$VERSION"
-          git push origin "refs/tags/$VERSION"
+          echo "Release tag $VERSION already points to the expected commit"
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git tag -a "$VERSION" "$RELEASE_COMMIT" -m "$VERSION"
+        git push origin "refs/tags/$VERSION"
+    - name: Download native artifacts
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        path: release-artifacts
+        pattern: subconverter-*
+        merge-multiple: true
+    - name: Generate checksums and notes
+      env:
+        VERSION: ${{ needs.sync.outputs.version }}
+        RELEASE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        (
+          cd release-artifacts
+          sha256sum * > SHA256SUMS
+        )
+        python3 - <<'PY'
+        import json
+        import os
+        from pathlib import Path
 
-      - name: Download native artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: release-artifacts
-          pattern: subconverter-*
-          merge-multiple: true
+        metadata = json.loads(Path(".github/project-metadata.json").read_text())
+        source_lock = json.loads(Path(".github/source-lock.json").read_text())
+        mihomo = source_lock["mihomo"]
+        project = source_lock["project"]
+        notes = f"""## {os.environ['VERSION']}
 
-      - name: Generate checksums and notes
-        env:
-          VERSION: ${{ needs.sync.outputs.version }}
-          RELEASE_COMMIT: ${{ needs.sync.outputs.candidate_commit }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd release-artifacts
-            sha256sum * > SHA256SUMS
-          )
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          metadata = json.loads(Path(".github/project-metadata.json").read_text())
-          source_lock = json.loads(Path(".github/source-lock.json").read_text())
-          mihomo = source_lock["mihomo"]
-          project = source_lock["project"]
-          notes = f"""## {os.environ['VERSION']}
-
-          - Project commit: `{os.environ['RELEASE_COMMIT']}`
-          - Upstream: `{metadata['upstream_repository']}`
-          - Upstream version: `{metadata['upstream_version']}`
-          - Upstream commit: `{metadata['upstream_commit']}`
-          - Locked Mihomo release: [`{mihomo['tag']}`]({mihomo['release_url']})
-          - Locked Mihomo commit: `{mihomo['tag_identity']['commit']}`
-          - Source pair ID: `{source_lock['pair_id']}`
-          - Parity contract: `{project['parity_contract']}` (helper protocol `{project['helper_protocol']}`)
-          """
-          Path("release-notes.md").write_text(notes, encoding="utf-8")
-          PY
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
-        with:
-          tag_name: ${{ needs.sync.outputs.version }}
-          name: ${{ needs.sync.outputs.version }}
-          body_path: release-notes.md
-          files: release-artifacts/*
-          fail_on_unmatched_files: true
-
+        - Project commit: `{os.environ['RELEASE_COMMIT']}`
+        - Upstream: `{metadata['upstream_repository']}`
+        - Upstream version: `{metadata['upstream_version']}`
+        - Upstream commit: `{metadata['upstream_commit']}`
+        - Locked Mihomo release: [`{mihomo['tag']}`]({mihomo['release_url']})
+        - Locked Mihomo commit: `{mihomo['tag_identity']['commit']}`
+        - Source pair ID: `{source_lock['pair_id']}`
+        - Parity contract: `{project['parity_contract']}` (helper protocol `{project['helper_protocol']}`)
+        """
+        Path("release-notes.md").write_text(notes, encoding="utf-8")
+        PY
+    - name: Publish GitHub Release
+      uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
+      with:
+        tag_name: ${{ needs.sync.outputs.version }}
+        name: ${{ needs.sync.outputs.version }}
+        body_path: release-notes.md
+        files: release-artifacts/*
+        fail_on_unmatched_files: true
   cleanup:
-    needs: [sync, publish, release]
-    if: >-
-      always() &&
-      needs.sync.outputs.candidate_branch != ''
+    needs:
+    - sync
+    - publish
+    - release
+    if: always() && needs.sync.outputs.candidate_branch != ''
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: master
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Delete candidate branch
-        env:
-          CANDIDATE_BRANCH: ${{ needs.sync.outputs.candidate_branch }}
-        shell: bash
-        run: git push origin --delete "$CANDIDATE_BRANCH"
-
+    - name: Checkout repository
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      with:
+        ref: master
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Delete candidate branch
+      env:
+        CANDIDATE_BRANCH: ${{ needs.sync.outputs.candidate_branch }}
+      shell: bash
+      run: |
+        git push origin --delete "$CANDIDATE_BRANCH"
   report:
-    needs: [sync, native, docker_candidate, promote, publish, release, cleanup]
+    needs:
+    - sync
+    - native
+    - docker_candidate
+    - promote
+    - publish
+    - release
+    - cleanup
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout workflow utilities
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
+    - name: Checkout workflow utilities
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      with:
+        persist-credentials: false
+    - name: Update synchronization issue
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+        SYNC_RESULT: ${{ needs.sync.result }}
+        NATIVE_RESULT: ${{ needs.native.result }}
+        DOCKER_CANDIDATE_RESULT: ${{ needs.docker_candidate.result }}
+        PROMOTE_RESULT: ${{ needs.promote.result }}
+        PUBLISH_RESULT: ${{ needs.publish.result }}
+        RELEASE_RESULT: ${{ needs.release.result }}
+        CLEANUP_RESULT: ${{ needs.cleanup.result }}
+        SOURCE_LOCK_CHANGED: ${{ needs.sync.outputs.source_lock_changed }}
+        MIHOMO_TAG: ${{ needs.sync.outputs.mihomo_tag }}
+        MIHOMO_COMMIT: ${{ needs.sync.outputs.mihomo_commit }}
+        PAIR_ID: ${{ needs.sync.outputs.pair_id }}
+        RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        title="[automation] Upstream synchronization failed"
 
-      - name: Update synchronization issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          SYNC_RESULT: ${{ needs.sync.result }}
-          NATIVE_RESULT: ${{ needs.native.result }}
-          DOCKER_CANDIDATE_RESULT: ${{ needs.docker_candidate.result }}
-          PROMOTE_RESULT: ${{ needs.promote.result }}
-          PUBLISH_RESULT: ${{ needs.publish.result }}
-          RELEASE_RESULT: ${{ needs.release.result }}
-          CLEANUP_RESULT: ${{ needs.cleanup.result }}
-          SOURCE_LOCK_CHANGED: ${{ needs.sync.outputs.source_lock_changed }}
-          MIHOMO_TAG: ${{ needs.sync.outputs.mihomo_tag }}
-          MIHOMO_COMMIT: ${{ needs.sync.outputs.mihomo_commit }}
-          PAIR_ID: ${{ needs.sync.outputs.pair_id }}
-          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          title="[automation] Upstream synchronization failed"
-
-          failed=false
-          for result in "$SYNC_RESULT" "$NATIVE_RESULT" "$DOCKER_CANDIDATE_RESULT" "$PROMOTE_RESULT" "$PUBLISH_RESULT" "$RELEASE_RESULT" "$CLEANUP_RESULT"; do
-            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
-              failed=true
-            fi
-          done
-
-          {
-            echo "### Synchronization result"
-            echo
-            echo "- Sync: \`$SYNC_RESULT\`"
-            echo "- Native build: \`$NATIVE_RESULT\`"
-            echo "- Docker candidate: \`$DOCKER_CANDIDATE_RESULT\`"
-            echo "- Promote: \`$PROMOTE_RESULT\`"
-            echo "- Publish: \`$PUBLISH_RESULT\`"
-            echo "- Release: \`$RELEASE_RESULT\`"
-            echo "- Cleanup: \`$CLEANUP_RESULT\`"
-            echo "- Source lock changed: \`$SOURCE_LOCK_CHANGED\`"
-            echo "- Mihomo: \`$MIHOMO_TAG\` (\`$MIHOMO_COMMIT\`)"
-            echo "- Source pair: \`$PAIR_ID\`"
-            echo "- Run: $RUN_URL"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          repo_has_issues="$(
-            python3 scripts/retry_gh_api.py -- \
-              "repos/$GITHUB_REPOSITORY" \
-              --jq '.has_issues'
-          )"
-          if [[ "$repo_has_issues" != "true" ]]; then
-            echo "Issues are disabled; the workflow summary is the failure report." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+        failed=false
+        for result in "$SYNC_RESULT" "$NATIVE_RESULT" "$DOCKER_CANDIDATE_RESULT" "$PROMOTE_RESULT" "$PUBLISH_RESULT" "$RELEASE_RESULT" "$CLEANUP_RESULT"; do
+          if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+            failed=true
           fi
+        done
 
-          issue_number="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+        {
+          echo "### Synchronization result"
+          echo
+          echo "- Sync: \`$SYNC_RESULT\`"
+          echo "- Native build: \`$NATIVE_RESULT\`"
+          echo "- Docker candidate: \`$DOCKER_CANDIDATE_RESULT\`"
+          echo "- Promote: \`$PROMOTE_RESULT\`"
+          echo "- Publish: \`$PUBLISH_RESULT\`"
+          echo "- Release: \`$RELEASE_RESULT\`"
+          echo "- Cleanup: \`$CLEANUP_RESULT\`"
+          echo "- Source lock changed: \`$SOURCE_LOCK_CHANGED\`"
+          echo "- Mihomo: \`$MIHOMO_TAG\` (\`$MIHOMO_COMMIT\`)"
+          echo "- Source pair: \`$PAIR_ID\`"
+          echo "- Run: $RUN_URL"
+        } >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "$failed" == "true" ]]; then
-            body="Automated synchronization failed.
+        repo_has_issues="$(
+          python3 scripts/retry_gh_api.py -- \
+            "repos/$GITHUB_REPOSITORY" \
+            --jq '.has_issues'
+        )"
+        if [[ "$repo_has_issues" != "true" ]]; then
+          echo "Issues are disabled; the workflow summary is the failure report." >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
 
-          - Sync: \`$SYNC_RESULT\`
-          - Native build: \`$NATIVE_RESULT\`
-          - Docker candidate: \`$DOCKER_CANDIDATE_RESULT\`
-          - Promote: \`$PROMOTE_RESULT\`
-          - Publish: \`$PUBLISH_RESULT\`
-          - Release: \`$RELEASE_RESULT\`
-          - Cleanup: \`$CLEANUP_RESULT\`
-          - Source lock changed: \`$SOURCE_LOCK_CHANGED\`
-          - Mihomo: \`$MIHOMO_TAG\` (\`$MIHOMO_COMMIT\`)
-          - Source pair: \`$PAIR_ID\`
-          - Run: $RUN_URL"
-            if [[ -n "$issue_number" ]]; then
-              gh issue comment "$issue_number" --body "$body"
-            else
-              gh issue create --title "$title" --body "$body"
-            fi
-          elif [[ -n "$issue_number" ]]; then
-            gh issue comment "$issue_number" --body "Automation recovered successfully: $RUN_URL"
-            gh issue close "$issue_number" --reason completed
+        issue_number="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+
+        if [[ "$failed" == "true" ]]; then
+          body="Automated synchronization failed.
+
+        - Sync: \`$SYNC_RESULT\`
+        - Native build: \`$NATIVE_RESULT\`
+        - Docker candidate: \`$DOCKER_CANDIDATE_RESULT\`
+        - Promote: \`$PROMOTE_RESULT\`
+        - Publish: \`$PUBLISH_RESULT\`
+        - Release: \`$RELEASE_RESULT\`
+        - Cleanup: \`$CLEANUP_RESULT\`
+        - Source lock changed: \`$SOURCE_LOCK_CHANGED\`
+        - Mihomo: \`$MIHOMO_TAG\` (\`$MIHOMO_COMMIT\`)
+        - Source pair: \`$PAIR_ID\`
+        - Run: $RUN_URL"
+          if [[ -n "$issue_number" ]]; then
+            gh issue comment "$issue_number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
           fi
+        elif [[ -n "$issue_number" ]]; then
+          gh issue comment "$issue_number" --body "Automation recovered successfully: $RUN_URL"
+          gh issue close "$issue_number" --reason completed
+        fi

@@ -9,5 +9,4 @@ scripts/yaml-cpp
 src/.DS_Store
 
 build
-.pytest_cache
 __pycache__

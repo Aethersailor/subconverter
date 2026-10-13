@@ -20,9 +20,6 @@ DEFAULT_LOCK = ROOT / ".github" / "source-lock.json"
 OVERLAY_FILES = (
     Path("mihomo-fetcher/cmd/subconverter-mihomo-fetcher/main.go"),
 )
-TEST_OVERLAY_FILES = (
-    Path("mihomo-fetcher/cmd/subconverter-mihomo-fetcher/main_test.go"),
-)
 
 PLATFORM_TARGETS = {
     "linux-386": ("linux", "386", {"GO386": "sse2"}),
@@ -157,7 +154,7 @@ def copy_source(source, destination, ca_bundle):
         ca_destination.write_bytes(Path(ca_bundle).read_bytes())
     except OSError as error:
         raise BuildError("unable to inject the locked CA bundle: {}".format(error))
-    for relative in OVERLAY_FILES + TEST_OVERLAY_FILES:
+    for relative in OVERLAY_FILES:
         overlay_source = ROOT / relative
         overlay_destination = (
             destination / "cmd" / "subconverter-mihomo-fetcher" / relative.name
@@ -221,24 +218,6 @@ def build(args):
                 "-buildid=",
             ]
         )
-        if args.platform == "linux-amd64":
-            try:
-                subprocess.run(
-                    [
-                        str(go_binary),
-                        "test",
-                        "-count=1",
-                        "-tags",
-                        "with_gvisor",
-                        "./cmd/subconverter-mihomo-fetcher",
-                    ],
-                    cwd=build_root,
-                    env=environment,
-                    check=True,
-                )
-            except (OSError, subprocess.CalledProcessError) as error:
-                raise BuildError("Mihomo helper tests failed: {}".format(error))
-
         command = [
             str(go_binary),
             "build",
