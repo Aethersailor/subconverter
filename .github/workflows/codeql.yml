@@ -73,7 +73,7 @@ jobs:
         cp mihomo-fetcher/cmd/subconverter-mihomo-fetcher/main.go .codeql-mihomo/cmd/subconverter-mihomo-fetcher/main.go
         cp /etc/ssl/certs/ca-certificates.crt .codeql-mihomo/component/ca/ca-certificates.crt
         cd .codeql-mihomo
-        go build -tags with_gvisor ./cmd/subconverter-mihomo-fetcher
+        go build -a -tags with_gvisor ./cmd/subconverter-mihomo-fetcher
     - name: Analyze source
       uses: github/codeql-action/analyze@f3c49fd1ef3281abc41069b3dd22807a60c963f6
       with:
