@@ -1648,7 +1648,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
                 singleproxy["password"] >>= password;
                 if (password.empty())
                     singleproxy["auth"] >>= password;
-                if (singleproxy["up"].IsDefined()) {
+                if (singleproxy["up"].IsDefined() && !singleproxy["up"].IsNull()) {
                     singleproxy["up"] >>= up;
                     if (up.empty()) {
                         try {
@@ -1657,7 +1657,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
                         }
                     }
                 }
-                if (singleproxy["down"].IsDefined()) {
+                if (singleproxy["down"].IsDefined() && !singleproxy["down"].IsNull()) {
                     singleproxy["down"] >>= down;
                     if (down.empty()) {
                         try {
