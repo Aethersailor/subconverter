@@ -70,11 +70,9 @@ jobs:
 
           # Repository-token merges need an explicit follow-up workflow dispatch.
           if (( merged > 0 )); then
+            gh workflow run codeql.yml --repo "$REPOSITORY" --ref "$BASE_BRANCH" || result=1
             if jq -e 'any(.[]; (test("^README\\.md$") or test("^\\.github/templates/README\\.md\\.tmpl$") or test("^docs/.*$") or test("^mihomo\\-fetcher/PROTOCOL\\.md$") or test("^scripts/MIHOMO_FETCHER_PACKAGING\\.md$")) | not)' <<<"$merged_files" >/dev/null; then
               gh workflow run 'build.yml' --repo "$REPOSITORY" --ref "$BASE_BRANCH" || result=1
-            fi
-            if jq -e true <<<"$merged_files" >/dev/null; then
-              gh workflow run 'codeql.yml' --repo "$REPOSITORY" --ref "$BASE_BRANCH" || result=1
             fi
             if jq -e 'any(.[]; (test("^README\\.md$") or test("^\\.github/templates/README\\.md\\.tmpl$") or test("^docs/.*$") or test("^mihomo\\-fetcher/PROTOCOL\\.md$") or test("^scripts/MIHOMO_FETCHER_PACKAGING\\.md$")) | not)' <<<"$merged_files" >/dev/null; then
               gh workflow run 'docker.yml' --repo "$REPOSITORY" --ref "$BASE_BRANCH" || result=1

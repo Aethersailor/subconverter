@@ -2,13 +2,11 @@ name: CodeQL
 'on':
   push:
     branches:
-    - master
-  pull_request:
-    branches:
-    - master
+    - '**'
+  pull_request: {}
   schedule:
-  - cron: 4 3 * * 1
-  workflow_dispatch: null
+  - cron: 13 4 * * *
+  workflow_dispatch: {}
 permissions:
   contents: read
 concurrency:
@@ -17,27 +15,27 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
-      security-events: write
       actions: read
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
         include:
         - language: actions
-          build_mode: none
-        - language: python
-          build_mode: none
-        - language: go
-          build_mode: manual
+          build-mode: none
         - language: c-cpp
-          build_mode: none
+          build-mode: none
+        - language: go
+          build-mode: manual
+        - language: python
+          build-mode: none
     steps:
     - name: Checkout source
-      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       with:
         persist-credentials: false
     - name: Read the locked Mihomo source revision
@@ -48,7 +46,7 @@ jobs:
         printf 'revision=%s\n' "$revision" >>"$GITHUB_OUTPUT"
     - name: Checkout locked Mihomo build sources
       if: matrix.language == 'go'
-      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       with:
         repository: MetaCubeX/mihomo
         ref: ${{ steps.mihomo.outputs.revision }}
@@ -56,16 +54,16 @@ jobs:
         persist-credentials: false
     - name: Set up Go
       if: matrix.language == 'go'
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
       with:
-        cache-dependency-path: .codeql-mihomo/go.sum
         go-version: 1.26.x
+        cache: false
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@f3c49fd1ef3281abc41069b3dd22807a60c963f6
+      uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
       with:
         languages: ${{ matrix.language }}
-        build-mode: ${{ matrix.build_mode }}
-        queries: security-extended
+        build-mode: ${{ matrix.build-mode }}
+        queries: security-and-quality
     - name: Build the project fetcher for analysis
       if: matrix.language == 'go'
       run: |
@@ -74,7 +72,7 @@ jobs:
         cp /etc/ssl/certs/ca-certificates.crt .codeql-mihomo/component/ca/ca-certificates.crt
         cd .codeql-mihomo
         go build -a -tags with_gvisor ./cmd/subconverter-mihomo-fetcher
-    - name: Analyze source
-      uses: github/codeql-action/analyze@f3c49fd1ef3281abc41069b3dd22807a60c963f6
+    - name: Upload CodeQL results
+      uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
       with:
         category: /language:${{ matrix.language }}
