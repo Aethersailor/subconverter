@@ -95,7 +95,7 @@
       "tree": "9690917ec3c0c1f59a263452fa9ca91f4aa64b17"
     }
   },
-  "pair_id": "sha256:60739ec2afd89ba4ee96161020099c06054059ec7a7cd5e35596597c3b71447c",
+  "pair_id": "sha256:e1f398342cb1623b4ae4864ae285b72d68e28fbca4c38752a9776b47723710c0",
   "project": {
     "helper_overlay_sha256": "sha256:c81a787bd67db7a5eb8cc081bc4d8b7d0c9de02c70058a5b13b78416f5bd806d",
     "helper_protocol": 1,
@@ -104,14 +104,14 @@
   "schema_version": 1,
   "subconverter": {
     "branch": "master",
-    "commit": "32d7b7be4ae3a7296cd2cd89c1c306c51ade5a84",
+    "commit": "a48be9c81c5570adccb854cfc9b234e587000cd1",
     "commit_verification": {
       "reason": "valid",
       "verified": true,
-      "verified_at": "2026-10-21T02:47:21Z"
+      "verified_at": "2026-10-27T08:02:19Z"
     },
     "repository": "asdlokj1qpi233/subconverter",
-    "tree": "2fb0db5f58aba6d84a85fffe3fa2ac4c1bc8eb81",
+    "tree": "ebefe3b5ae5d1188076b82c67d9ed8d202afefae",
     "version": "v0.9.9",
     "version_file": "src/version.h",
     "version_file_blob": "413051a9e77cd8020b1720f23e217852adf9b340"

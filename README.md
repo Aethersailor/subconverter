@@ -42,7 +42,7 @@
 | 信息 | 当前值 |
 | --- | --- |
 | 上游版本 | `v0.9.9` |
-| 上游提交短 ID | [`32d7b7be`](https://github.com/asdlokj1qpi233/subconverter/commit/32d7b7be4ae3a7296cd2cd89c1c306c51ade5a84) |
+| 上游提交短 ID | [`a48be9c8`](https://github.com/asdlokj1qpi233/subconverter/commit/a48be9c81c5570adccb854cfc9b234e587000cd1) |
 | Mihomo 稳定版 | [`v1.19.33`](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33) |
 
 上游版本用于识别版本系列，实际同步源码以上游提交短 ID 为准。
