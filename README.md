@@ -43,7 +43,7 @@
 | --- | --- |
 | 上游版本 | `v0.9.9` |
 | 上游提交短 ID | [`a48be9c8`](https://github.com/asdlokj1qpi233/subconverter/commit/a48be9c81c5570adccb854cfc9b234e587000cd1) |
-| Mihomo 稳定版 | [`v1.19.33`](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33) |
+| Mihomo 稳定版 | [`v1.19.34`](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.34) |
 
 上游版本用于识别版本系列，实际同步源码以上游提交短 ID 为准。
 
